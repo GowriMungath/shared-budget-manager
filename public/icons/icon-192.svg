@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" role="img" aria-label="Shared Budget Manager icon">
+  <rect width="192" height="192" rx="40" fill="#064e3b"/>
+  <path d="M46 62c0-8.837 7.163-16 16-16h68c8.837 0 16 7.163 16 16v68c0 8.837-7.163 16-16 16H62c-8.837 0-16-7.163-16-16V62Z" fill="#f6f7f4"/>
+  <path d="M67 79h58M67 98h58M67 117h34" stroke="#064e3b" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="126" cy="118" r="18" fill="#d9a441"/>
+  <path d="M126 108v20M116 118h20" stroke="#064e3b" stroke-width="6" stroke-linecap="round"/>
+</svg>
