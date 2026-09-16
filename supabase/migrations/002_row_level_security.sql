@@ -18,64 +18,73 @@ ALTER TABLE goals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE obligations ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
--- EXPLICIT GRANTS: Least-Privilege Access Control
+-- EXPLICIT GRANTS: Least-Privilege Access Control (with complete REVOKE)
 -- ============================================================================
 
--- STEP 1: Revoke all privileges from anon on all tables
-REVOKE ALL ON profiles FROM anon;
-REVOKE ALL ON households FROM anon;
-REVOKE ALL ON household_members FROM anon;
-REVOKE ALL ON participants FROM anon;
-REVOKE ALL ON categories FROM anon;
-REVOKE ALL ON budget_periods FROM anon;
-REVOKE ALL ON budget_limits FROM anon;
-REVOKE ALL ON transactions FROM anon;
-REVOKE ALL ON allocations FROM anon;
-REVOKE ALL ON settlements FROM anon;
-REVOKE ALL ON payment_methods FROM anon;
-REVOKE ALL ON goals FROM anon;
-REVOKE ALL ON obligations FROM anon;
+-- STEP 1: Completely revoke all privileges from PUBLIC, anon, AND authenticated
+-- This clears any pre-existing default grants that bypass our explicit model
+REVOKE ALL ON profiles FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON households FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON household_members FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON participants FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON categories FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON budget_periods FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON budget_limits FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON transactions FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON allocations FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON settlements FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON payment_methods FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON goals FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON obligations FROM PUBLIC, anon, authenticated;
 
--- STEP 2: Grant minimal privileges to authenticated users
--- Profiles: users can read/update/insert their own
+-- STEP 2: Grant ONLY minimal privileges to authenticated users
+-- profiles: users can read/update/insert their own (enforced by RLS)
 GRANT SELECT, INSERT, UPDATE ON profiles TO authenticated;
 
--- Households: users can only read (via RLS); creation only via RPC
+-- households: users can only read (creation only via RPC, updates only by owners via RLS)
 GRANT SELECT ON households TO authenticated;
 
--- Household_members: users can read and insert (via RLS/policy, owners can add members only)
+-- household_members: users can read and insert (owners can add members via RLS policy)
 GRANT SELECT, INSERT ON household_members TO authenticated;
 
--- Financial read/write: RLS enforces household membership
--- Participants: read/write (member can create/update participants in their household)
+-- participants: read/write (members manage participants in their household via RLS)
 GRANT SELECT, INSERT, UPDATE ON participants TO authenticated;
 
--- Categories: read/write (members manage categories)
+-- categories: read/write (members manage categories in their household via RLS)
 GRANT SELECT, INSERT, UPDATE ON categories TO authenticated;
 
--- Budget_periods: read/write (members manage budget periods)
+-- budget_periods: read/write (members manage periods in their household via RLS)
 GRANT SELECT, INSERT, UPDATE ON budget_periods TO authenticated;
 
--- Budget_limits: read/write/delete (members manage limits, delete when not applicable)
+-- budget_limits: read/write/delete (members manage limits, delete when no longer needed)
 GRANT SELECT, INSERT, UPDATE, DELETE ON budget_limits TO authenticated;
 
--- Transactions: read/write/delete (members record and delete transactions)
+-- transactions: read/write/delete (members record and delete transactions)
 GRANT SELECT, INSERT, UPDATE, DELETE ON transactions TO authenticated;
 
--- Allocations: read/write/delete (part of transaction; can modify allocations)
+-- allocations: read/write/delete (part of transaction, members modify allocations)
 GRANT SELECT, INSERT, UPDATE, DELETE ON allocations TO authenticated;
 
--- Settlements: read/write/delete (members record settlements)
+-- settlements: read/write/delete (members record settlements between participants)
 GRANT SELECT, INSERT, UPDATE, DELETE ON settlements TO authenticated;
 
--- Payment_methods: read/write/delete (members manage payment methods)
+-- payment_methods: read/write/delete (members manage payment methods)
 GRANT SELECT, INSERT, UPDATE, DELETE ON payment_methods TO authenticated;
 
--- Goals: read/write/delete (members manage goals)
+-- goals: read/write/delete (members manage savings goals)
 GRANT SELECT, INSERT, UPDATE, DELETE ON goals TO authenticated;
 
--- Obligations: read/write/delete (members track obligations)
+-- obligations: read/write/delete (members track future commitments)
 GRANT SELECT, INSERT, UPDATE, DELETE ON obligations TO authenticated;
+
+-- ============================================================================
+-- EXPLICIT DENY: Privileges NOT granted (protection against future defaults)
+-- ============================================================================
+-- The following privileges are explicitly NOT granted and RLS reinforces this:
+-- - TRUNCATE (catastrophic data loss)
+-- - TRIGGER (could bypass RLS)
+-- - REFERENCES (could break FK constraints)
+-- - ALL (comprehensive restriction)
 
 -- ============================================================================
 -- NOTE: No direct INSERT on households
