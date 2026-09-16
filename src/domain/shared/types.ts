@@ -2,7 +2,7 @@ export type Brand<T, Name extends string> = T & { readonly __brand: Name };
 
 export type HouseholdId = Brand<string, "HouseholdId">;
 export type ParticipantId = Brand<string, "ParticipantId">;
-export type MemberId = Brand<ParticipantId, "MemberId">;
+export type MemberId = Brand<string, "MemberId">;
 export type CategoryId = Brand<string, "CategoryId">;
 export type BudgetPeriodId = Brand<string, "BudgetPeriodId">;
 export type BudgetLimitId = Brand<string, "BudgetLimitId">;

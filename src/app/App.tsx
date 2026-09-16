@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { BarChart3, Flag, LayoutDashboard, ListChecks, ReceiptText, Settings, Users } from "lucide-react";
+import { BarChart3, Flag, LayoutDashboard, ListChecks, LogOut, ReceiptText, Settings, Users } from "lucide-react";
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { createAppServices, type AppServices } from "./appServices.ts";
 import { BudgetsPage } from "../ui/pages/BudgetsPage.tsx";
 import { DashboardPage } from "../ui/pages/DashboardPage.tsx";
 import { TransactionsPage } from "../ui/pages/TransactionsPage.tsx";
+import { LoginPage } from "../ui/pages/LoginPage.tsx";
+import { AuthProvider, useAuth } from "../ui/auth/AuthContext.tsx";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -21,12 +23,18 @@ const primaryMobileNavItems = navItems.slice(0, 3);
 export function App() {
   return (
     <BrowserRouter>
-      <AppShell />
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/*" element={<AppShell />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }
 
 function AppShell() {
+  const { user, loading: authLoading } = useAuth();
   const [services, setServices] = useState<AppServices | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
@@ -34,6 +42,14 @@ function AppShell() {
 
   useEffect(() => {
     let mounted = true;
+
+    // Only initialize services if user is authenticated
+    if (!user) {
+      if (mounted) {
+        setServices(null);
+      }
+      return;
+    }
 
     createAppServices()
       .then((created) => {
@@ -44,14 +60,14 @@ function AppShell() {
       .catch((caught: unknown) => {
         console.error("Application initialization failed", caught);
         if (mounted) {
-          setError("We could not open your local budget data. Please refresh and try again.");
+          setError("We could not open your budget data. Please refresh and try again.");
         }
       });
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     const updateConnectivity = () => setOffline(!navigator.onLine);
@@ -63,6 +79,19 @@ function AppShell() {
       window.removeEventListener("offline", updateConnectivity);
     };
   }, []);
+
+  // Show login page if not authenticated
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f6f7f4]">
+        <div className="text-stone-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
   const activeLabel = navItems.find((item) => location.pathname.startsWith(item.path))?.label ?? "Dashboard";
 
@@ -105,7 +134,13 @@ function AppShell() {
               <p className="text-sm text-stone-500">Trial MVP</p>
               <h2 className="text-2xl font-semibold">{activeLabel}</h2>
             </div>
-            <MobileNav />
+            <div className="flex items-center gap-3">
+              <MobileNav />
+              <div className="hidden sm:block text-sm text-stone-600">
+                {user?.email}
+              </div>
+              <LogoutButton />
+            </div>
           </div>
           {offline ? (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -115,7 +150,7 @@ function AppShell() {
         </header>
         <main className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-6 lg:px-8 lg:pb-8">
           {!services ? (
-            <div className="rounded-md border border-stone-200 bg-white p-5 text-stone-600">Loading local data...</div>
+            <div className="rounded-md border border-stone-200 bg-white p-5 text-stone-600">Loading your household data...</div>
           ) : (
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -193,5 +228,31 @@ function Placeholder({ title }: { title: string }) {
       <h3 className="text-lg font-semibold">{title}</h3>
       <p className="mt-2 text-sm text-stone-600">Coming later.</p>
     </section>
+  );
+}
+
+function LogoutButton() {
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+  const [loading, setLoading] = useState(false);
+
+  const handleLogout = async () => {
+    setLoading(true);
+    const { error } = await signOut();
+    if (!error) {
+      navigate("/login");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <button
+      onClick={handleLogout}
+      disabled={loading}
+      className="flex items-center gap-2 text-stone-700 hover:text-stone-900 text-sm disabled:opacity-50"
+      title="Sign out"
+    >
+      <LogOut size={16} />
+    </button>
   );
 }
