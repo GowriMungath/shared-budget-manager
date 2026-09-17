@@ -3,38 +3,27 @@ import { cryptoIdService } from "../application/services/idService.ts";
 import { BudgetUseCases } from "../application/use-cases/budgets/budgetUseCases.ts";
 import { DashboardUseCases } from "../application/use-cases/dashboard/dashboardUseCases.ts";
 import { TransactionUseCases } from "../application/use-cases/transactions/transactionUseCases.ts";
-import { createDatabase, type SharedBudgetManagerDatabase } from "../infrastructure/persistence/indexeddb/database.ts";
-import { createRepositories } from "../infrastructure/persistence/indexeddb/repositories.ts";
-import { initializeDatabase } from "../infrastructure/persistence/indexeddb/seed.ts";
-import { isCloudMode } from "../infrastructure/config.ts";
-import { createCloudAppServices } from "./cloudAppServices.ts";
-
-export interface AppServices {
-  db: SharedBudgetManagerDatabase | null;
-  householdName: string;
-  transactions: TransactionUseCases;
-  budgets: BudgetUseCases;
-  dashboard: DashboardUseCases;
-}
+import { createSupabaseRepositories } from "../infrastructure/supabase/repositories.ts";
+import { householdResolver } from "../application/auth/householdResolver.ts";
+import { householdService } from "../application/auth/householdService.ts";
+import type { AppServices } from "./appServices.ts";
 
 /**
- * Create app services based on mode
- * LOCAL MODE: IndexedDB-backed with seeded reference data
- * CLOUD MODE: Supabase-backed, requires authenticated user
+ * Create app services for CLOUD mode using Supabase repositories
+ * Resolves user's household from Supabase first
  */
-export async function createAppServices(user?: User): Promise<AppServices> {
-  if (isCloudMode()) {
-    if (!user) {
-      throw new Error("Cloud mode requires an authenticated user");
-    }
-    return createCloudAppServices(user);
+export async function createCloudAppServices(user: User): Promise<AppServices> {
+  // Resolve the user's household from Supabase
+  const householdId = await householdResolver.resolveHouseholdForUser(user.id);
+
+  // Load household details
+  const household = await householdService.getPrimaryHousehold(user.id);
+  if (!household) {
+    throw new Error("Could not load household details");
   }
 
-  // LOCAL MODE: use IndexedDB
-  const db = createDatabase();
-  await db.open();
-  await initializeDatabase(db);
-  const repositories = createRepositories(db);
+  // Create Supabase-backed repositories for this household
+  const repositories = createSupabaseRepositories(householdId);
 
   const transactions = new TransactionUseCases({
     transactions: repositories.transactions,
@@ -43,6 +32,7 @@ export async function createAppServices(user?: User): Promise<AppServices> {
     paymentMethods: repositories.paymentMethods,
     ids: cryptoIdService,
   });
+
   const budgets = new BudgetUseCases({
     budgetPeriods: repositories.budgetPeriods,
     budgetLimits: repositories.budgetLimits,
@@ -53,8 +43,8 @@ export async function createAppServices(user?: User): Promise<AppServices> {
   });
 
   return {
-    db,
-    householdName: "Gowri & Nathaniel", // Local mode uses seeded household name
+    db: null, // Cloud mode doesn't use IndexedDB as primary storage
+    householdName: household.name,
     transactions,
     budgets,
     dashboard: new DashboardUseCases({

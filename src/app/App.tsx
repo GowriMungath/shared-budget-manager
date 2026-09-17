@@ -7,6 +7,7 @@ import { DashboardPage } from "../ui/pages/DashboardPage.tsx";
 import { TransactionsPage } from "../ui/pages/TransactionsPage.tsx";
 import { LoginPage } from "../ui/pages/LoginPage.tsx";
 import { AuthProvider, useAuth } from "../ui/auth/AuthContext.tsx";
+import { HouseholdProvider } from "../ui/household/HouseholdContext.tsx";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -51,7 +52,7 @@ function AppShell() {
       return;
     }
 
-    createAppServices()
+    createAppServices(user)
       .then((created) => {
         if (mounted) {
           setServices(created);
@@ -60,7 +61,7 @@ function AppShell() {
       .catch((caught: unknown) => {
         console.error("Application initialization failed", caught);
         if (mounted) {
-          setError("We could not open your budget data. Please refresh and try again.");
+          setError(caught instanceof Error ? caught.message : "We could not open your budget data. Please refresh and try again.");
         }
       });
 
@@ -99,12 +100,49 @@ function AppShell() {
     return <main className="min-h-screen p-6 text-red-900">{error}</main>;
   }
 
+  if (!services) {
+    return (
+      <div className="min-h-screen bg-[#f6f7f4] text-stone-950">
+        <div className="lg:pl-64">
+          <header className="sticky top-0 z-10 border-b border-stone-200 bg-[#f6f7f4]/90 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur lg:px-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-stone-500">Trial MVP</p>
+                <h2 className="text-2xl font-semibold">{activeLabel}</h2>
+              </div>
+              <div className="flex items-center gap-3">
+                <MobileNav />
+                <div className="hidden sm:block text-sm text-stone-600">
+                  {user?.email}
+                </div>
+                <LogoutButton />
+              </div>
+            </div>
+          </header>
+          <main className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-6 lg:px-8 lg:pb-8">
+            <div className="rounded-md border border-stone-200 bg-white p-5 text-stone-600">Loading your household data...</div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <HouseholdProvider name={services.householdName}>
+      <AppContent user={user} services={services} offline={offline} />
+    </HouseholdProvider>
+  );
+}
+
+function AppContent({ user, services, offline }: { user: { email?: string }, services: AppServices, offline: boolean }) {
+  const location = useLocation();
+  const activeLabel = navItems.find((item) => location.pathname.startsWith(item.path))?.label ?? "Dashboard";
   return (
     <div className="min-h-screen bg-[#f6f7f4] text-stone-950">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-stone-200 bg-white/85 px-4 py-5 backdrop-blur lg:block">
         <div className="mb-7 px-2">
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-800">Shared Ledger</p>
-          <h1 className="mt-2 text-xl font-semibold">Gowri & Nathaniel</h1>
+          <h1 className="mt-2 text-xl font-semibold">{services.householdName}</h1>
         </div>
         <nav className="space-y-1" aria-label="Main navigation">
           {navItems.map((item) => {
@@ -149,21 +187,17 @@ function AppShell() {
           ) : null}
         </header>
         <main className="px-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-6 lg:px-8 lg:pb-8">
-          {!services ? (
-            <div className="rounded-md border border-stone-200 bg-white p-5 text-stone-600">Loading your household data...</div>
-          ) : (
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<DashboardPage dashboardUseCases={services.dashboard} />} />
-              <Route path="/transactions" element={<TransactionsPage transactionUseCases={services.transactions} />} />
-              <Route path="/budgets" element={<BudgetsPage budgetUseCases={services.budgets} />} />
-              <Route path="/goals" element={<Placeholder title="Goals" />} />
-              <Route path="/people" element={<Placeholder title="People & Settlements" />} />
-              <Route path="/reports" element={<Placeholder title="Reports" />} />
-              <Route path="/settings" element={<Placeholder title="Settings" />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
-          )}
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardPage dashboardUseCases={services.dashboard} />} />
+            <Route path="/transactions" element={<TransactionsPage transactionUseCases={services.transactions} />} />
+            <Route path="/budgets" element={<BudgetsPage budgetUseCases={services.budgets} />} />
+            <Route path="/goals" element={<Placeholder title="Goals" />} />
+            <Route path="/people" element={<Placeholder title="People & Settlements" />} />
+            <Route path="/reports" element={<Placeholder title="Reports" />} />
+            <Route path="/settings" element={<Placeholder title="Settings" />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
         </main>
       </div>
       <MobileBottomNav />
