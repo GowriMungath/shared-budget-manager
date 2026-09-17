@@ -17,5 +17,5 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src", "tests", "supabase/tests", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "tests", "supabase/tests", "supabase/scripts", "vite.config.ts", "playwright.config.ts"]
 }
