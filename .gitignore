@@ -10,3 +10,5 @@ test-results/
 npm-debug.log*
 .DS_Store
 *.local
+.vercel
+.env*
