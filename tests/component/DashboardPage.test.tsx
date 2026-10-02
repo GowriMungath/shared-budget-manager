@@ -34,6 +34,9 @@ const overview: DashboardOverview = {
       personalSpendingCents: parseMoney("30.00"),
       sharedSpendingCents: parseMoney("25.00"),
       totalEconomicShareCents: parseMoney("55.00"),
+      budgetShareCents: parseMoney("100.00"),
+      usedCents: parseMoney("55.00"),
+      remainingBudgetCents: parseMoney("45.00"),
     },
     {
       participantId: nathanielId,
@@ -41,6 +44,9 @@ const overview: DashboardOverview = {
       personalSpendingCents: parseMoney("0.00"),
       sharedSpendingCents: parseMoney("25.00"),
       totalEconomicShareCents: parseMoney("25.00"),
+      budgetShareCents: parseMoney("100.00"),
+      usedCents: parseMoney("25.00"),
+      remainingBudgetCents: parseMoney("75.00"),
     },
   ],
   budgetSummary: {
@@ -144,5 +150,36 @@ describe("DashboardPage", () => {
     expect(screen.getByText(/Rohit owes Nathaniel \$30.00/)).toBeInTheDocument();
     expect(screen.getByText("Gowri Tuition")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /View all/i })).toHaveAttribute("href", "/transactions");
+  });
+
+  test("renders member budget summary with Budget, Used, and Remaining fields", async () => {
+    render(
+      <MemoryRouter>
+        <DashboardPage dashboardUseCases={dashboardUseCases} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("heading", { name: "Dashboard" });
+
+    // Verify the Member Budget Summary section is rendered
+    const heading = screen.getByText("Member Budget Summary");
+    expect(heading).toBeInTheDocument();
+
+    // Get all text elements containing "Gowri"
+    const gowriElements = screen.queryAllByText("Gowri");
+    expect(gowriElements.length).toBeGreaterThan(0);
+
+    // Find the first one in Member Budget Summary (not in other sections)
+    const summarySection = heading.closest("section");
+    expect(summarySection).toBeDefined();
+    expect(summarySection).toHaveTextContent("Gowri");
+    expect(summarySection).toHaveTextContent("$100.00"); // budgetShareCents
+    expect(summarySection).toHaveTextContent("$55.00"); // usedCents
+    expect(summarySection).toHaveTextContent("$45.00"); // remainingBudgetCents
+
+    // Verify Nathaniel's member summary is displayed
+    expect(summarySection).toHaveTextContent("Nathaniel");
+    expect(summarySection).toHaveTextContent("$25.00"); // Nathaniel's usedCents
+    expect(summarySection).toHaveTextContent("$75.00"); // Nathaniel's remainingBudgetCents
   });
 });

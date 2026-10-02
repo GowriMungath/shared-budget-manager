@@ -169,40 +169,74 @@ export class BudgetUseCases {
     const householdMemberIds = householdMembers.map((participant) => participant.id);
     const periodPercentElapsed = periodElapsedPercent(period, this.dependencies.today?.() ?? new Date().toISOString().slice(0, 10));
     
-    // One budget per category (all categories scope-neutral)
-    const activeCategories = categories.filter((cat) => !cat.archived);
+    // Check if this is a legacy period - uses legacy per-scope budget model
+    // Legacy indicators: limits with personal scope, owner assignment, or multiple limits per category
+    // (New Cycle 2 model uses only household-level limits: one per category, shared scope, no owner)
+    const isLegacyPeriod = limits.some((limit) => {
+      // Indicator 1: Explicit personal scope (legacy model had per-person budgets)
+      if (limit.scope === "personal") return true;
+      
+      // Indicator 2: Owner-specific limit (legacy model tracked budgets per person)
+      if (limit.ownerParticipantId) return true;
+      
+      // Indicator 3: Multiple limits for same category (legacy aggregated personal limits per category)
+      const duplicates = limits.filter((l) => l.categoryId === limit.categoryId);
+      if (duplicates.length > 1) return true;
+      
+      return false;
+    });
+
+    // For legacy periods: include both active and archived categories that have budget limits
+    // For new periods: only show active categories
+    const categoriesToDisplay = isLegacyPeriod
+      ? categories.filter((cat) => limits.some((limit) => limit.categoryId === cat.id))
+      : categories.filter((cat) => !cat.archived);
     
     const makeSummary = (category: Category): BudgetCategorySummary => {
-      const limit = limits.find((item) => item.categoryId === category.id);
-      const syntheticLimit: BudgetLimit =
-        limit ??
-        ({
-          id: budgetLimitId("unbudgeted"),
-          budgetPeriodId: period.id,
-          categoryId: category.id,
-          scope: "shared",
-          limitCents: cents(0),
-        } satisfies BudgetLimit);
-      const usage = calculateBudgetUsage(syntheticLimit, period, transactions, participants, householdMemberIds);
+      // For legacy periods: sum ALL budget limits for this category (handles multiple owner-specific rows)
+      // For new periods: use single limit (one per category)
+      const categoryLimits = limits.filter((item) => item.categoryId === category.id);
+      const totalBudgetedCents = categoryLimits.reduce((sum, limit) => sum + limit.limitCents, 0);
+      const hasLimits = categoryLimits.length > 0;
+      
+      // Create a neutral limit for spending calculation
+      // Must NOT filter by scope/ownerParticipantId - new model sums ALL transactions in category
+      // regardless of transaction.scope or allocation.participantId
+      const neutralLimit: BudgetLimit = {
+        id: budgetLimitId("neutral"),
+        budgetPeriodId: period.id,
+        categoryId: category.id,
+        scope: "shared", // Always "shared" scope for calculation (counts all household members)
+        limitCents: cents(totalBudgetedCents > 0 ? totalBudgetedCents : 0),
+      };
+      
+      const usage = calculateBudgetUsage(neutralLimit, period, transactions, participants, householdMemberIds);
       const spentCents = usage.spentCents;
-      const status = paceStatus(limit, spentCents, periodPercentElapsed);
+      
+      // Pace status uses aggregated total
+      const aggregatedLimit: BudgetLimit = {
+        ...neutralLimit,
+        limitCents: cents(totalBudgetedCents),
+      };
+      const status = paceStatus(hasLimits ? aggregatedLimit : undefined, spentCents, periodPercentElapsed);
+      
       return {
         categoryId: category.id,
         categoryName: category.name,
         groupName: category.groupName,
         scope: "shared",
-        budgetLimitId: limit?.id,
-        budgetedCents: limit?.limitCents,
+        budgetLimitId: categoryLimits[0]?.id,
+        budgetedCents: hasLimits ? cents(totalBudgetedCents) : undefined,
         spentCents,
-        remainingCents: limit ? cents(limit.limitCents - spentCents) : undefined,
-        percentUsed: limit && limit.limitCents > 0 ? spentCents / limit.limitCents : undefined,
+        remainingCents: hasLimits ? cents(totalBudgetedCents - spentCents) : undefined,
+        percentUsed: hasLimits && totalBudgetedCents > 0 ? spentCents / totalBudgetedCents : undefined,
         periodPercentElapsed,
         paceStatus: status,
         archived: category.archived,
       };
     };
     
-    const categorySummaries = activeCategories.map((category) => makeSummary(category));
+    const categorySummaries = categoriesToDisplay.map((category) => makeSummary(category));
     const totalBudgeted = categorySummaries.reduce((sum, item) => sum + (item.budgetedCents ?? 0), 0);
     const totalSpent = categorySummaries.reduce((sum, item) => sum + item.spentCents, 0);
     const totalRemaining = categorySummaries.reduce((sum, item) => sum + (item.remainingCents ?? 0), 0);

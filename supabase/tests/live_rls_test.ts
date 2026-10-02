@@ -268,14 +268,17 @@ async function test2_GowriCreatesHousehold(): Promise<void> {
   gowriParticipantId = (participant as any)?.[0]?.id || ""; // eslint-disable-line @typescript-eslint/no-explicit-any -- Array element type not preserved from insert
 
   // Create category for Gowri
+  // NOTE: During transitional schema, category.scope still exists but new code doesn't use it
+  // Include scope for backward compatibility during migration period
   const { data: category, error: categoryError } = await gowriClient
     .from("categories")
     .insert({
       household_id: gowriHouseholdId,
       name: `${TEST_PREFIX}Category`,
       group_name: "Test",
-      scope: "shared",
-    })
+      scope: "shared", // Transitional: will be removed in migration 008
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Transitional schema compatibility
+    } as any)
     .select();
 
   assert(!categoryError, `Gowri can create category`);
@@ -502,14 +505,17 @@ async function test8_CrossHouseholdIntegrity(): Promise<void> {
   outsiderParticipantId = (outsiderParticipantData as any)?.[0]?.id; // eslint-disable-line @typescript-eslint/no-explicit-any -- Array element type not preserved from insert
 
   // Create outsider category
+  // NOTE: During transitional schema, category.scope still exists but new code doesn't use it
+  // Include scope for backward compatibility during migration period
   const { data: outsiderCategoryData, error: outsiderCategoryError } = await outsiderClient
     .from("categories")
     .insert({
       household_id: outsiderHouseholdId!,
       name: `${TEST_PREFIX}OutsiderCategory`,
       group_name: "Test",
-      scope: "shared",
-    })
+      scope: "shared", // Transitional: will be removed in migration 008
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Transitional schema compatibility
+    } as any)
     .select();
 
   assert(!outsiderCategoryError, `Outsider created category`);

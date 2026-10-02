@@ -145,13 +145,32 @@ export function DashboardPage({ dashboardUseCases }: DashboardPageProps) {
           <div className="mt-4 space-y-3">
             <MetricRow label="Shared" value={dollars(overview.householdSummary.sharedSpendingCents)} />
             <MetricRow label="Personal" value={dollars(overview.householdSummary.personalSpendingCents)} />
+          </div>
+        </section>
+
+        <section className="rounded-md border border-stone-200 bg-white p-5">
+          <h4 className="font-semibold">Member Budget Summary</h4>
+          <div className="mt-4 space-y-4">
             {overview.memberSummaries.map((member) => (
-              <MetricRow
-                key={member.participantId}
-                label={member.name}
-                value={dollars(member.totalEconomicShareCents)}
-                detail={`${dollars(member.sharedSpendingCents)} shared + ${dollars(member.personalSpendingCents)} personal`}
-              />
+              <div key={member.participantId} className="border-b border-stone-100 pb-3 last:border-0 last:pb-0">
+                <p className="font-medium">{member.name}</p>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <p className="text-xs text-stone-500">Budget</p>
+                    <p className="font-semibold">{dollars(member.budgetShareCents)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-stone-500">Used</p>
+                    <p className="font-semibold">{dollars(member.usedCents)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-stone-500">Remaining</p>
+                    <p className={`font-semibold ${member.remainingBudgetCents >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                      {dollars(member.remainingBudgetCents)}
+                    </p>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         </section>

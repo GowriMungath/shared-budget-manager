@@ -5,8 +5,8 @@ import { DashboardUseCases } from "../../src/application/use-cases/dashboard/das
 import { TransactionUseCases } from "../../src/application/use-cases/transactions/transactionUseCases.ts";
 import type { IdService } from "../../src/application/services/idService.ts";
 import { parseMoney } from "../../src/domain/money/money.ts";
-import { budgetPeriodId, categoryId, goalId, participantId, settlementId, transactionId } from "../../src/domain/shared/ids.ts";
-import type { Participant } from "../../src/domain/shared/types.ts";
+import { budgetLimitId, budgetPeriodId, categoryId, goalId, participantId, settlementId, transactionId } from "../../src/domain/shared/ids.ts";
+import type { Participant, Cents } from "../../src/domain/shared/types.ts";
 import type { Transaction } from "../../src/domain/ledger/transaction.ts";
 import { createDatabase, type SharedBudgetManagerDatabase } from "../../src/infrastructure/persistence/indexeddb/database.ts";
 import { createRepositories, type DexieTransactionRepository } from "../../src/infrastructure/persistence/indexeddb/repositories.ts";
@@ -433,4 +433,278 @@ describe("dashboard use cases", () => {
     expect(referenceData.categories.length).toBeGreaterThanOrEqual(4); // At least our test categories
     // User can pick any category for personal transaction
   });
+
+  test("legacy Trial MVP period produces correct per-person budget shares: Gowri $180 / Nathaniel $180", async () => {
+    // This test verifies the actual historical Trial MVP budget structure with multiple owner-specific limits
+    // and confirms the dashboard correctly reports per-person budget shares using real fields
+    const legacyPeriodId = budgetPeriodId("legacy_trial_mvp_dashboard");
+    
+    // Create the legacy period
+    await db.budgetPeriods.put({
+      id: legacyPeriodId,
+      name: "Trial MVP",
+      startDate: "2026-09-15",
+      endDate: "2026-09-30",
+    });
+
+    // Category IDs
+    const carMaintenanceId = categoryId("legacy_car_maintenance");
+    const eatingOutId = categoryId("legacy_eating_out");
+    const entertainmentId = categoryId("legacy_entertainment");
+    const fuelId2 = categoryId("legacy_fuel");
+    const legacyGroceriesId = categoryId("legacy_groceries");
+    const miscellaneousId = categoryId("legacy_miscellaneous");
+    const personalFoodId = categoryId("legacy_personal_food");
+    const clothingId = categoryId("legacy_clothing_shopping");
+
+    // Create both active and archived categories matching production structure
+    await db.categories.bulkPut([
+      { id: carMaintenanceId, name: "Car Maintenance", groupName: "Transportation", archived: false },
+      { id: eatingOutId, name: "Eating Out", groupName: "Food", archived: false },
+      { id: entertainmentId, name: "Entertainment", groupName: "Leisure", archived: false },
+      { id: fuelId2, name: "Fuel", groupName: "Transportation", archived: false },
+      { id: legacyGroceriesId, name: "Groceries", groupName: "Food", archived: false },
+      { id: miscellaneousId, name: "Miscellaneous", groupName: "Other", archived: false },
+      { id: personalFoodId, name: "Personal Food", groupName: "Personal", archived: true },
+      { id: clothingId, name: "Clothing", groupName: "Personal", archived: true },
+    ]);
+
+    // Insert 10 historical BudgetLimit rows directly
+    const repos = createRepositories(db);
+    
+    // 6 shared category limits (one per category)
+    const sharedLimits: Array<{
+      id: ReturnType<typeof budgetLimitId>;
+      categoryId: ReturnType<typeof categoryId>;
+      scope: "shared";
+      limitCents: Cents;
+    }> = [
+      { id: budgetLimitId("legacy_limit_1"), categoryId: carMaintenanceId, scope: "shared", limitCents: parseMoney("15") },
+      { id: budgetLimitId("legacy_limit_2"), categoryId: eatingOutId, scope: "shared", limitCents: parseMoney("18") },
+      { id: budgetLimitId("legacy_limit_3"), categoryId: entertainmentId, scope: "shared", limitCents: parseMoney("40") },
+      { id: budgetLimitId("legacy_limit_4"), categoryId: fuelId2, scope: "shared", limitCents: parseMoney("85") },
+      { id: budgetLimitId("legacy_limit_5"), categoryId: legacyGroceriesId, scope: "shared", limitCents: parseMoney("75") },
+      { id: budgetLimitId("legacy_limit_6"), categoryId: miscellaneousId, scope: "shared", limitCents: parseMoney("25") },
+    ];
+
+    // 4 personal category limits (2 rows per category: Gowri + Nathaniel)
+    const personalLimits: Array<{
+      id: ReturnType<typeof budgetLimitId>;
+      categoryId: ReturnType<typeof categoryId>;
+      scope: "personal";
+      ownerParticipantId: ReturnType<typeof participantId>;
+      limitCents: Cents;
+    }> = [
+      { id: budgetLimitId("legacy_limit_7"), categoryId: personalFoodId, scope: "personal", ownerParticipantId: gowriId, limitCents: parseMoney("11") },
+      { id: budgetLimitId("legacy_limit_8"), categoryId: personalFoodId, scope: "personal", ownerParticipantId: nathanielId, limitCents: parseMoney("11") },
+      { id: budgetLimitId("legacy_limit_9"), categoryId: clothingId, scope: "personal", ownerParticipantId: gowriId, limitCents: parseMoney("40") },
+      { id: budgetLimitId("legacy_limit_10"), categoryId: clothingId, scope: "personal", ownerParticipantId: nathanielId, limitCents: parseMoney("40") },
+    ];
+
+    // Insert all 10 limits directly
+    const allLimits = [...sharedLimits, ...personalLimits].map((limit) => {
+      if ("ownerParticipantId" in limit) {
+        return {
+          id: limit.id,
+          budgetPeriodId: legacyPeriodId,
+          categoryId: limit.categoryId,
+          scope: "personal" as const,
+          ownerParticipantId: limit.ownerParticipantId,
+          limitCents: limit.limitCents,
+        };
+      }
+      return {
+        id: limit.id,
+        budgetPeriodId: legacyPeriodId,
+        categoryId: limit.categoryId,
+        scope: "shared" as const,
+        limitCents: limit.limitCents,
+      };
+    });
+
+    for (const limit of allLimits) {
+      await repos.budgetLimits.save(limit);
+    }
+
+    // Get dashboard overview for legacy period
+    const overview = await dashboard.getDashboardOverview(legacyPeriodId);
+
+    // HOUSEHOLD TOTAL: Verify household total budget = $360 (from BudgetUseCases aggregation)
+    expect(overview.householdSummary.totalBudgetedCents).toBe(parseMoney("360.00"));
+
+    // MEMBER BUDGET SHARES: Use real DashboardMemberSummary fields
+    const householdMembers = overview.memberSummaries;
+    expect(householdMembers.length).toBe(2);
+
+    const gowri = householdMembers.find((m) => m.participantId === gowriId);
+    const nathaniel = householdMembers.find((m) => m.participantId === nathanielId);
+
+    expect(gowri).toBeDefined();
+    expect(nathaniel).toBeDefined();
+
+    // GOWRI PERSONAL BALANCE: Budget Share / Used / Remaining
+    expect(gowri!.budgetShareCents).toBe(parseMoney("180.00")); // $360 / 2 members
+    expect(gowri!.usedCents).toBe(parseMoney("0.00")); // No transactions created
+    expect(gowri!.remainingBudgetCents).toBe(parseMoney("180.00")); // $180 - $0
+
+    // NATHANIEL PERSONAL BALANCE: Budget Share / Used / Remaining
+    expect(nathaniel!.budgetShareCents).toBe(parseMoney("180.00")); // $360 / 2 members
+    expect(nathaniel!.usedCents).toBe(parseMoney("0.00")); // No transactions created
+    expect(nathaniel!.remainingBudgetCents).toBe(parseMoney("180.00")); // $180 - $0
+  });
+
+  test("REGRESSION: Odd-cent household budget splits deterministically with remainder going to first member", async () => {
+    // Test that a household budget of $101.01 (10101 cents) splits as:
+    // Member 0 (sorted by memberKey): 5051 cents (gets the remainder)
+    // Member 1 (sorted by memberKey): 5050 cents
+    // Total must equal exactly 10101 cents
+    // Ordering must be DETERMINISTIC regardless of database return order
+    const oddCentPeriodId = budgetPeriodId("odd_cent_test_period");
+    const oddCentGroceriesId = categoryId("odd_cent_groceries");
+
+    const repos = createRepositories(db);
+    
+    // Create period and budget
+    await repos.budgetPeriods.save({
+      id: oddCentPeriodId,
+      name: "Odd Cents Test",
+      startDate: "2026-09-15",
+      endDate: "2026-09-30",
+    });
+
+    await db.categories.put({
+      id: oddCentGroceriesId,
+      name: "Groceries OddTest",
+      groupName: "Food",
+      archived: false,
+    });
+
+    // Set household budget to $101.01 (10101 cents)
+    await repos.budgetLimits.save({
+      id: budgetLimitId("odd_cent_limit"),
+      budgetPeriodId: oddCentPeriodId,
+      categoryId: oddCentGroceriesId,
+      scope: "shared",
+      limitCents: parseMoney("101.01"),
+    });
+
+    // Get dashboard overview
+    const oddCentDashboard = new DashboardUseCases({
+      budgets,
+      transactions: repos.transactions,
+      participants: repos.participants,
+      categories: repos.categories,
+      settlements: repos.settlements,
+      goals: repos.goals,
+      obligations: repos.obligations,
+      today: () => "2026-09-20",
+    });
+
+    const oddCentOverview = await oddCentDashboard.getDashboardOverview(oddCentPeriodId);
+
+    // VERIFY: Member summaries have deterministic splits sorted by memberKey
+    const oddMembers = oddCentOverview.memberSummaries;
+    expect(oddMembers.length).toBe(2);
+
+    // memberKey "gowri" < "nathaniel" alphabetically, so Gowri gets the remainder
+    const gowriOdd = oddMembers.find((m) => m.participantId === gowriId);
+    const nathanielOdd = oddMembers.find((m) => m.participantId === nathanielId);
+
+    expect(gowriOdd).toBeDefined();
+    expect(nathanielOdd).toBeDefined();
+
+    // First member (sorted by memberKey) gets the remainder cent
+    expect(gowriOdd!.budgetShareCents).toBe(parseMoney("50.51")); // 5051 cents (Gowri: memberKey "gowri")
+    expect(nathanielOdd!.budgetShareCents).toBe(parseMoney("50.50")); // 5050 cents (Nathaniel: memberKey "nathaniel")
+
+    // VERIFY: Sum of all member shares equals household total (no rounding errors)
+    const totalShare =
+      gowriOdd!.budgetShareCents +
+      nathanielOdd!.budgetShareCents;
+    expect(totalShare).toBe(parseMoney("101.01"));
+
+    // VERIFY: Used cents are zero (no transactions)
+    expect(gowriOdd!.usedCents).toBe(parseMoney("0.00"));
+    expect(nathanielOdd!.usedCents).toBe(parseMoney("0.00"));
+
+    // VERIFY: Remaining = Budget - Used for both
+    expect(gowriOdd!.remainingBudgetCents).toBe(parseMoney("50.51"));
+    expect(nathanielOdd!.remainingBudgetCents).toBe(parseMoney("50.50"));
+  });
+
+  test("REGRESSION: Odd-cent split is deterministic regardless of repository return order", async () => {
+    // This test verifies that even if the database returns participants in reverse order (nathaniel, gowri),
+    // the DashboardUseCases sorts them deterministically by memberKey, so Gowri still gets the remainder
+    const orderTestPeriodId = budgetPeriodId("order_test_period");
+    const orderTestGroceriesId = categoryId("order_test_groceries");
+
+    const repos = createRepositories(db);
+    
+    // Create period
+    await repos.budgetPeriods.save({
+      id: orderTestPeriodId,
+      name: "Order Test",
+      startDate: "2026-09-15",
+      endDate: "2026-09-30",
+    });
+
+    await db.categories.put({
+      id: orderTestGroceriesId,
+      name: "Groceries OrderTest",
+      groupName: "Food",
+      archived: false,
+    });
+
+    // Set household budget to $101.01
+    await repos.budgetLimits.save({
+      id: budgetLimitId("order_test_limit"),
+      budgetPeriodId: orderTestPeriodId,
+      categoryId: orderTestGroceriesId,
+      scope: "shared",
+      limitCents: parseMoney("101.01"),
+    });
+
+    // Manually reverse the participant order in the database to simulate non-deterministic return order
+    // Store original participants, reverse them, then put them back
+    const allParticipants = await repos.participants.listAll();
+    const reversedParticipants = [...allParticipants].reverse();
+    
+    // Clear and re-insert in reversed order
+    await db.participants.clear();
+    for (const participant of reversedParticipants) {
+      await db.participants.put(participant);
+    }
+
+    const orderTestDashboard = new DashboardUseCases({
+      budgets,
+      transactions: repos.transactions,
+      participants: repos.participants,
+      categories: repos.categories,
+      settlements: repos.settlements,
+      goals: repos.goals,
+      obligations: repos.obligations,
+      today: () => "2026-09-20",
+    });
+
+    const reverseOrderOverview = await orderTestDashboard.getDashboardOverview(orderTestPeriodId);
+
+    // VERIFY: Even though database now has nathaniel before gowri, gowri still gets the remainder
+    // because DashboardUseCases sorts by memberKey before calling allocateEqually()
+    const reversedMembers = reverseOrderOverview.memberSummaries;
+    
+    const gowriReverse = reversedMembers.find((m) => m.participantId === gowriId);
+    const nathanielReverse = reversedMembers.find((m) => m.participantId === nathanielId);
+
+    expect(gowriReverse).toBeDefined();
+    expect(nathanielReverse).toBeDefined();
+
+    // Gowri STILL gets $50.51 (the remainder), despite being returned AFTER nathaniel from repo
+    expect(gowriReverse!.budgetShareCents).toBe(parseMoney("50.51"));
+    expect(nathanielReverse!.budgetShareCents).toBe(parseMoney("50.50"));
+
+    // VERIFY: Sum still equals exactly 101.01
+    const reverseTotal = gowriReverse!.budgetShareCents + nathanielReverse!.budgetShareCents;
+    expect(reverseTotal).toBe(parseMoney("101.01"));
+  });
+
 });

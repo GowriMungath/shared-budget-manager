@@ -314,9 +314,10 @@ async function migrateCategories(client: ReturnType<typeof createClient<Database
 
   for (const category of CATEGORIES_TO_MIGRATE) {
     // Check if exists
+    // NOTE: During transitional schema, category.scope still exists in DB but we don't use it
     const { data: existing, error: checkError } = await client
       .from("categories")
-      .select("id, name, group_name, scope, archived")
+      .select("id, name, group_name, archived")
       .eq("household_id", PERMANENT_HOUSEHOLD_ID)
       .eq("id", category.id)
       .single();
@@ -326,11 +327,10 @@ async function migrateCategories(client: ReturnType<typeof createClient<Database
     }
 
     if (existing) {
-      // Verify values match
+      // Verify values match (exclude scope during transitional period)
       if (
         existing.name === category.name &&
         existing.group_name === category.groupName &&
-        existing.scope === category.scope &&
         existing.archived === category.archived
       ) {
         stats.alreadyExisting++;
@@ -340,7 +340,7 @@ async function migrateCategories(client: ReturnType<typeof createClient<Database
       }
     }
 
-    // Insert
+    // Insert (transitional: include scope for backward compatibility, will be removed in migration 008)
     const { error: insertError } = await client.from("categories").insert({
       id: category.id,
       household_id: PERMANENT_HOUSEHOLD_ID,
@@ -348,7 +348,8 @@ async function migrateCategories(client: ReturnType<typeof createClient<Database
       group_name: category.groupName,
       scope: category.scope as "shared" | "personal",
       archived: category.archived,
-    });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Transitional schema compatibility
+    } as any);
 
     if (insertError) {
       stats.failed++;

@@ -1,7 +1,7 @@
 import { periodElapsedPercent } from "../../../domain/budget/calendar.ts";
 import { calculateGoalProgress } from "../../../domain/goals/goals.ts";
 import { summarizeSpending, type Transaction } from "../../../domain/ledger/transaction.ts";
-import { cents } from "../../../domain/money/money.ts";
+import { allocateEqually, cents } from "../../../domain/money/money.ts";
 import { calculateExternalReceivables, calculateNetInternalBalance } from "../../../domain/settlement/settlement.ts";
 import type { BudgetPeriod, Cents, Participant, ParticipantId } from "../../../domain/shared/types.ts";
 import type {
@@ -141,6 +141,7 @@ function attentionCategories(sections: readonly BudgetSectionSummary[]): Dashboa
 function buildMemberSummaries(
   transactions: readonly Transaction[],
   householdMembers: readonly Participant[],
+  totalHouseholdBudgetCents: Cents,
 ): DashboardMemberSummary[] {
   const memberIds = new Set(householdMembers.map((member) => member.id));
   const summaries = new Map<ParticipantId, { personal: number; shared: number }>();
@@ -164,14 +165,23 @@ function buildMemberSummaries(
     }
   }
 
-  return householdMembers.map((member) => {
+  // Calculate per-member budget share using deterministic allocation
+  const memberCount = householdMembers.length;
+  const budgetShares = memberCount > 0 ? allocateEqually(totalHouseholdBudgetCents, memberCount) : [];
+
+  return householdMembers.map((member, index) => {
     const summary = summaries.get(member.id) ?? { personal: 0, shared: 0 };
+    const usedCents = cents(summary.personal + summary.shared);
+    const budgetShareCents = budgetShares[index] ?? cents(0);
     return {
       participantId: member.id,
       name: member.name,
       personalSpendingCents: cents(summary.personal),
       sharedSpendingCents: cents(summary.shared),
-      totalEconomicShareCents: cents(summary.personal + summary.shared),
+      totalEconomicShareCents: usedCents,
+      budgetShareCents,
+      usedCents,
+      remainingBudgetCents: cents(budgetShareCents - usedCents),
     };
   });
 }
@@ -211,7 +221,14 @@ export class DashboardUseCases {
     const periodTransactions = allTransactions.filter((transaction) => isWithinPeriod(transaction, selectedPeriod));
     const participantsById = new Map(participants.map((participant) => [participant.id, participant]));
     const categoriesById = new Map(categories.map((category) => [category.id, category]));
-    const householdMembers = participants.filter((participant) => participant.kind === "household-member");
+    // Sort household members deterministically by memberKey (or id if memberKey not present) for consistent budget share allocation
+    const householdMembers = participants
+      .filter((participant) => participant.kind === "household-member")
+      .sort((left, right) => {
+        const leftKey = left.memberKey ?? left.id;
+        const rightKey = right.memberKey ?? right.id;
+        return leftKey.localeCompare(rightKey);
+      });
     const householdMemberIds = householdMembers.map((participant) => participant.id);
     const spendingSummary = summarizeSpending(periodTransactions, participants);
     
@@ -251,7 +268,7 @@ export class DashboardUseCases {
         sharedSpendingCents: sharedSpending,
         personalSpendingCents: personalSpending,
       },
-      memberSummaries: buildMemberSummaries(periodTransactions, householdMembers),
+      memberSummaries: buildMemberSummaries(periodTransactions, householdMembers, totalBudgeted),
       budgetSummary: {
         totalBudgetedCents: totalBudgeted,
         budgetedCategorySpentCents: budgetedSpent,

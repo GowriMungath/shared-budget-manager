@@ -1,8 +1,8 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { parseMoney } from "../../src/domain/money/money.ts";
-import { budgetPeriodId, categoryId, participantId, transactionId } from "../../src/domain/shared/ids.ts";
-import type { Participant } from "../../src/domain/shared/types.ts";
+import { budgetLimitId, budgetPeriodId, categoryId, participantId, transactionId } from "../../src/domain/shared/ids.ts";
+import type { Cents, Participant, BudgetLimit } from "../../src/domain/shared/types.ts";
 import { createDatabase, type SharedBudgetManagerDatabase } from "../../src/infrastructure/persistence/indexeddb/database.ts";
 import { createRepositories } from "../../src/infrastructure/persistence/indexeddb/repositories.ts";
 import { BudgetUseCases } from "../../src/application/use-cases/budgets/budgetUseCases.ts";
@@ -214,4 +214,137 @@ describe("budget use cases", () => {
     await repos.transactions.delete(original.id);
     expect(categorySpent(await overview(), "household", "Groceries").remainingCents).toBe(parseMoney("200.00"));
   });
+
+  test("REGRESSION: Legacy Trial MVP budget structure remains compatible with new model", async () => {
+    // This test verifies the actual historical Trial MVP budget structure with multiple owner-specific limits.
+    // Production Trial MVP had 10 distinct BudgetLimit rows:
+    // - 6 shared category limits (one row each)
+    // - 4 personal category limits (two rows each: Gowri + Nathaniel)
+    //
+    // New model must correctly aggregate multiple limits per category while preserving all rows.
+    // Total = $360: Shared $258 + Personal Food $22 + Clothing $80
+
+    const repos = createRepositories(db);
+    const legacyPeriodId = budgetPeriodId("legacy_trial_mvp");
+
+    // Create the legacy period (matching exact historical dates)
+    await repos.budgetPeriods.save({
+      id: legacyPeriodId,
+      name: "Trial MVP",
+      startDate: "2026-09-15",
+      endDate: "2026-09-30",
+    });
+
+    // Category IDs
+    const carMaintenanceId = categoryId("legacy_car_maintenance");
+    const eatingOutId = categoryId("legacy_eating_out");
+    const entertainmentId = categoryId("legacy_entertainment");
+    const fuelId = categoryId("legacy_fuel");
+    const legacyGroceriesId = categoryId("legacy_groceries");
+    const miscellaneousId = categoryId("legacy_miscellaneous");
+    const personalFoodId = categoryId("legacy_personal_food");
+    const clothingId = categoryId("legacy_clothing_shopping");
+
+    // Create both active and archived categories matching production structure
+    await db.categories.bulkPut([
+      { id: carMaintenanceId, name: "Car Maintenance", groupName: "Transportation", archived: false },
+      { id: eatingOutId, name: "Eating Out", groupName: "Food", archived: false },
+      { id: entertainmentId, name: "Entertainment", groupName: "Leisure", archived: false },
+      { id: fuelId, name: "Fuel", groupName: "Transportation", archived: false },
+      { id: legacyGroceriesId, name: "Groceries", groupName: "Food", archived: false },
+      { id: miscellaneousId, name: "Miscellaneous", groupName: "Other", archived: false },
+      { id: personalFoodId, name: "Personal Food", groupName: "Personal", archived: true },
+      { id: clothingId, name: "Clothing", groupName: "Personal", archived: true },
+    ]);
+
+    // Insert 10 historical BudgetLimit rows directly (matching actual production structure)
+    // Do NOT use setBudgetLimit() as it overwrites duplicate category entries
+    
+    // 6 shared category limits (one per category)
+    const sharedLimits: Array<{
+      id: ReturnType<typeof budgetLimitId>;
+      categoryId: ReturnType<typeof categoryId>;
+      scope: "shared";
+      limitCents: Cents;
+    }> = [
+      { id: budgetLimitId("legacy_limit_1"), categoryId: carMaintenanceId, scope: "shared", limitCents: parseMoney("15") },
+      { id: budgetLimitId("legacy_limit_2"), categoryId: eatingOutId, scope: "shared", limitCents: parseMoney("18") },
+      { id: budgetLimitId("legacy_limit_3"), categoryId: entertainmentId, scope: "shared", limitCents: parseMoney("40") },
+      { id: budgetLimitId("legacy_limit_4"), categoryId: fuelId, scope: "shared", limitCents: parseMoney("85") },
+      { id: budgetLimitId("legacy_limit_5"), categoryId: legacyGroceriesId, scope: "shared", limitCents: parseMoney("75") },
+      { id: budgetLimitId("legacy_limit_6"), categoryId: miscellaneousId, scope: "shared", limitCents: parseMoney("25") },
+    ];
+
+    // 4 personal category limits (2 rows per category: Gowri + Nathaniel)
+    const personalLimits: Array<{
+      id: ReturnType<typeof budgetLimitId>;
+      categoryId: ReturnType<typeof categoryId>;
+      scope: "personal";
+      ownerParticipantId: ReturnType<typeof participantId>;
+      limitCents: Cents;
+    }> = [
+      // Personal Food - Gowri
+      { id: budgetLimitId("legacy_limit_7"), categoryId: personalFoodId, scope: "personal", ownerParticipantId: gowriId, limitCents: parseMoney("11") },
+      // Personal Food - Nathaniel
+      { id: budgetLimitId("legacy_limit_8"), categoryId: personalFoodId, scope: "personal", ownerParticipantId: nathanielId, limitCents: parseMoney("11") },
+      // Clothing/Shopping - Gowri
+      { id: budgetLimitId("legacy_limit_9"), categoryId: clothingId, scope: "personal", ownerParticipantId: gowriId, limitCents: parseMoney("40") },
+      // Clothing/Shopping - Nathaniel
+      { id: budgetLimitId("legacy_limit_10"), categoryId: clothingId, scope: "personal", ownerParticipantId: nathanielId, limitCents: parseMoney("40") },
+    ];
+
+    // Insert all 10 limits directly using storage API
+    const allLimits: BudgetLimit[] = [...sharedLimits, ...personalLimits].map((limit) => {
+      if ("ownerParticipantId" in limit) {
+        return {
+          id: limit.id,
+          budgetPeriodId: legacyPeriodId,
+          categoryId: limit.categoryId,
+          scope: "personal" as const,
+          ownerParticipantId: limit.ownerParticipantId,
+          limitCents: limit.limitCents,
+        };
+      }
+      return {
+        id: limit.id,
+        budgetPeriodId: legacyPeriodId,
+        categoryId: limit.categoryId,
+        scope: "shared" as const,
+        limitCents: limit.limitCents,
+      };
+    });
+
+    for (const limit of allLimits) {
+      await repos.budgetLimits.save(limit);
+    }
+
+    // CRITICAL TEST: Verify new model aggregates multiple limits per category
+    const overview = await budgets.getBudgetOverview(legacyPeriodId);
+    expect(overview).toBeDefined();
+    expect(overview.period.id).toBe(legacyPeriodId);
+    expect(overview.sections.length).toBeGreaterThan(0);
+    
+    const section = overview.sections[0];
+    expect(section.categories.length).toBeGreaterThan(0);
+
+    // Verify each category correctly aggregates its limits
+    const personalFoodSummary = section.categories.find((cat) => cat.categoryName === "Personal Food");
+    expect(personalFoodSummary).toBeDefined();
+    expect(personalFoodSummary!.budgetedCents).toBe(parseMoney("22.00")); // $11 + $11
+
+    const clothingSummary = section.categories.find((cat) => cat.categoryName === "Clothing");
+    expect(clothingSummary).toBeDefined();
+    expect(clothingSummary!.budgetedCents).toBe(parseMoney("80.00")); // $40 + $40
+
+    // Verify total household budget = $360
+    // Shared: $15+$18+$40+$85+$75+$25 = $258
+    // Personal Food: $22 (aggregated from $11+$11)
+    // Clothing: $80 (aggregated from $40+$40)
+    // Total: $360
+    expect(section.totalBudgetedCents).toBe(parseMoney("360.00"));
+    
+    // Verify per-person equal share
+    expect(section.totalBudgetedCents / 2).toBe(parseMoney("180.00"));
+  });
 });
+

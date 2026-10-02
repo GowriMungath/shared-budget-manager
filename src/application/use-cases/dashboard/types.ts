@@ -30,6 +30,10 @@ export interface DashboardMemberSummary {
   personalSpendingCents: Cents;
   sharedSpendingCents: Cents;
   totalEconomicShareCents: Cents;
+  // Cycle 2 Personal Balance Model
+  budgetShareCents: Cents; // Allocated share of household budget (total / num members)
+  usedCents: Cents; // Total spending allocated to this member (shared allocations + personal allocations)
+  remainingBudgetCents: Cents; // budgetShareCents - usedCents
 }
 
 export interface DashboardBudgetSummary {
