@@ -2,7 +2,7 @@ import { calculateBudgetUsage } from "../../../domain/budget/budget.ts";
 import { assertCalendarDate, periodElapsedPercent } from "../../../domain/budget/calendar.ts";
 import { cents, parseMoney } from "../../../domain/money/money.ts";
 import { budgetLimitId, budgetPeriodId, categoryId } from "../../../domain/shared/ids.ts";
-import type { BudgetLimit, BudgetPeriod, Category, Cents, ParticipantId } from "../../../domain/shared/types.ts";
+import type { BudgetLimit, BudgetPeriod, Category, Cents } from "../../../domain/shared/types.ts";
 import type {
   BudgetLimitRepository,
   BudgetPeriodRepository,
@@ -98,21 +98,14 @@ export class BudgetUseCases {
 
   async setBudgetLimit(input: SetBudgetLimitInput): Promise<BudgetLimit> {
     const amount = moneyInput(input.amountInput);
-    if (input.scope === "personal" && !input.ownerParticipantId) {
-      throw new BudgetApplicationError("Personal budget requires an owner");
-    }
     const existing = (await this.dependencies.budgetLimits.listForPeriod(input.budgetPeriodId)).find(
-      (limit) =>
-        limit.categoryId === input.categoryId &&
-        limit.scope === input.scope &&
-        (limit.ownerParticipantId ?? undefined) === (input.ownerParticipantId ?? undefined),
+      (limit) => limit.categoryId === input.categoryId,
     );
     const limit: BudgetLimit = {
       id: existing?.id ?? budgetLimitId(this.dependencies.ids.createId()),
       budgetPeriodId: input.budgetPeriodId,
       categoryId: input.categoryId,
-      scope: input.scope,
-      ownerParticipantId: input.ownerParticipantId,
+      scope: "shared",
       limitCents: amount,
     };
     await this.dependencies.budgetLimits.save(limit);
@@ -130,8 +123,7 @@ export class BudgetUseCases {
     const category: Category = {
       id: categoryId(this.dependencies.ids.createId()),
       name: input.name.trim(),
-      groupName: input.groupName?.trim() || (input.scope === "shared" ? "Shared" : "Personal"),
-      scope: input.scope,
+      groupName: input.groupName?.trim() || "Other",
       archived: false,
     };
     await this.dependencies.categories.save(category);
@@ -176,25 +168,19 @@ export class BudgetUseCases {
     const householdMembers = participants.filter((participant) => participant.kind === "household-member");
     const householdMemberIds = householdMembers.map((participant) => participant.id);
     const periodPercentElapsed = periodElapsedPercent(period, this.dependencies.today?.() ?? new Date().toISOString().slice(0, 10));
-    const makeSummary = (
-      category: Category,
-      scope: "shared" | "personal",
-      ownerParticipantId?: ParticipantId,
-    ): BudgetCategorySummary => {
-      const limit = limits.find(
-        (item) =>
-          item.categoryId === category.id &&
-          item.scope === scope &&
-          (item.ownerParticipantId ?? undefined) === (ownerParticipantId ?? undefined),
-      );
+    
+    // One budget per category (all categories scope-neutral)
+    const activeCategories = categories.filter((cat) => !cat.archived);
+    
+    const makeSummary = (category: Category): BudgetCategorySummary => {
+      const limit = limits.find((item) => item.categoryId === category.id);
       const syntheticLimit: BudgetLimit =
         limit ??
         ({
           id: budgetLimitId("unbudgeted"),
           budgetPeriodId: period.id,
           categoryId: category.id,
-          scope,
-          ownerParticipantId,
+          scope: "shared",
           limitCents: cents(0),
         } satisfies BudgetLimit);
       const usage = calculateBudgetUsage(syntheticLimit, period, transactions, participants, householdMemberIds);
@@ -204,8 +190,7 @@ export class BudgetUseCases {
         categoryId: category.id,
         categoryName: category.name,
         groupName: category.groupName,
-        scope,
-        ownerParticipantId,
+        scope: "shared",
         budgetLimitId: limit?.id,
         budgetedCents: limit?.limitCents,
         spentCents,
@@ -216,45 +201,32 @@ export class BudgetUseCases {
         archived: category.archived,
       };
     };
-    const summarizeSection = (
-      key: string,
-      label: string,
-      scope: "shared" | "personal",
-      ownerParticipantId: ParticipantId | undefined,
-      sectionCategories: Category[],
-    ): BudgetSectionSummary => {
-      const categorySummaries = sectionCategories.map((category) => makeSummary(category, scope, ownerParticipantId));
-      const totalBudgeted = categorySummaries.reduce((sum, item) => sum + (item.budgetedCents ?? 0), 0);
-      const totalSpent = categorySummaries.reduce((sum, item) => sum + item.spentCents, 0);
-      const totalRemaining = categorySummaries.reduce((sum, item) => sum + (item.remainingCents ?? 0), 0);
-      const unbudgetedSpent = categorySummaries.reduce(
-        (sum, item) => sum + (item.budgetedCents === undefined ? item.spentCents : 0),
-        0,
-      );
-      return {
-        key,
-        label,
-        scope,
-        ownerParticipantId,
-        totalBudgetedCents: cents(totalBudgeted),
-        totalSpentCents: cents(totalSpent),
-        totalRemainingCents: cents(totalRemaining),
-        unbudgetedSpentCents: cents(unbudgetedSpent),
-        categories: categorySummaries,
-      };
+    
+    const categorySummaries = activeCategories.map((category) => makeSummary(category));
+    const totalBudgeted = categorySummaries.reduce((sum, item) => sum + (item.budgetedCents ?? 0), 0);
+    const totalSpent = categorySummaries.reduce((sum, item) => sum + item.spentCents, 0);
+    const totalRemaining = categorySummaries.reduce((sum, item) => sum + (item.remainingCents ?? 0), 0);
+    const unbudgetedSpent = categorySummaries.reduce(
+      (sum, item) => sum + (item.budgetedCents === undefined ? item.spentCents : 0),
+      0,
+    );
+    
+    const householdSection: BudgetSectionSummary = {
+      key: "household",
+      label: "Household Budget",
+      scope: "shared",
+      totalBudgetedCents: cents(totalBudgeted),
+      totalSpentCents: cents(totalSpent),
+      totalRemainingCents: cents(totalRemaining),
+      unbudgetedSpentCents: cents(unbudgetedSpent),
+      categories: categorySummaries,
     };
-    const sharedCategories = categories.filter((category) => category.scope === "shared");
-    const personalCategories = categories.filter((category) => category.scope === "personal");
+    
     return {
       period,
       periods,
       householdMembers,
-      sections: [
-        summarizeSection("shared", "Shared", "shared", undefined, sharedCategories),
-        ...householdMembers.map((member) =>
-          summarizeSection(member.id, `${member.name} Personal`, "personal", member.id, personalCategories),
-        ),
-      ],
+      sections: [householdSection],
     };
   }
 }

@@ -22,7 +22,6 @@ export const categoryRecordSchema = z.object({
   id: z.string(),
   name: z.string(),
   groupName: z.string(),
-  scope: z.enum(["shared", "personal"]),
   archived: z.boolean(),
 });
 

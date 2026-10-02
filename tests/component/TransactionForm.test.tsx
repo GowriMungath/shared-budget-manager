@@ -85,8 +85,8 @@ beforeEach(() => {
     householdMembers: participants,
     externalParticipants: [],
     categories: [
-      { id: shoppingCategoryId, name: "Shopping", groupName: "Personal", scope: "personal", archived: false },
-      { id: fuelCategoryId, name: "Fuel", groupName: "Shared", scope: "shared", archived: false },
+      { id: shoppingCategoryId, name: "Shopping", groupName: "Personal", archived: false },
+      { id: fuelCategoryId, name: "Fuel", groupName: "Shared", archived: false },
     ],
     paymentMethods: [],
   };

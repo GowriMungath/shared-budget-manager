@@ -112,7 +112,6 @@ export interface Database {
           household_id: string;
           name: string;
           group_name: string;
-          scope: "shared" | "personal";
           archived: boolean;
           created_at: string;
           updated_at: string;
@@ -123,7 +122,6 @@ export interface Database {
           household_id: string;
           name: string;
           group_name: string;
-          scope?: "shared" | "personal";
           archived?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -134,7 +132,6 @@ export interface Database {
           household_id?: string;
           name?: string;
           group_name?: string;
-          scope?: "shared" | "personal";
           archived?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -224,6 +221,7 @@ export interface Database {
           total_cents: number;
           category_id: string;
           payer_participant_id: string;
+          scope: "shared" | "personal";
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -237,6 +235,7 @@ export interface Database {
           total_cents: number;
           category_id: string;
           payer_participant_id: string;
+          scope?: "shared" | "personal";
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -250,6 +249,7 @@ export interface Database {
           total_cents?: number;
           category_id?: string;
           payer_participant_id?: string;
+          scope?: "shared" | "personal";
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;

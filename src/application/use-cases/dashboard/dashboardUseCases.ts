@@ -214,10 +214,23 @@ export class DashboardUseCases {
     const householdMembers = participants.filter((participant) => participant.kind === "household-member");
     const householdMemberIds = householdMembers.map((participant) => participant.id);
     const spendingSummary = summarizeSpending(periodTransactions, participants);
-    const sharedSection = budgetOverview.sections.find((section) => section.scope === "shared");
-    const personalSections = budgetOverview.sections.filter((section) => section.scope === "personal");
-    const sharedSpending = sharedSection?.totalSpentCents ?? cents(0);
-    const personalSpending = cents(personalSections.reduce((sum, section) => sum + section.totalSpentCents, 0));
+    
+    // Calculate shared and personal spending from actual transactions
+    let sharedSpendingAmount = 0;
+    let personalSpendingAmount = 0;
+    for (const transaction of periodTransactions) {
+      for (const allocation of transaction.allocations) {
+        if (householdMemberIds.includes(allocation.participantId)) {
+          if (transaction.scope === "shared") {
+            sharedSpendingAmount += allocation.amountCents;
+          } else {
+            personalSpendingAmount += allocation.amountCents;
+          }
+        }
+      }
+    }
+    const sharedSpending = cents(sharedSpendingAmount);
+    const personalSpending = cents(personalSpendingAmount);
     const totalBudgeted = sumSectionBudgeted(budgetOverview.sections);
     const budgetedSpent = budgetedCategorySpent(budgetOverview.sections);
     const remainingBudget = cents(totalBudgeted - budgetedSpent);

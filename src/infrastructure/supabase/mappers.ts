@@ -69,7 +69,6 @@ export function categoryFromRow(row: CategoryRow): Category {
     id: Ids.categoryId(row.id),
     name: row.name,
     groupName: row.group_name,
-    scope: row.scope,
     archived: row.archived,
   };
 }
@@ -83,7 +82,6 @@ export function categoryToRow(
     household_id: householdId,
     name: category.name,
     group_name: category.groupName,
-    scope: category.scope,
     archived: category.archived,
   };
 }
@@ -148,7 +146,7 @@ export function transactionFromRows(
     totalCents: txRow.total_cents as Cents,
     categoryId: Ids.categoryId(txRow.category_id),
     payerParticipantId: Ids.participantId(txRow.payer_participant_id),
-    scope: "shared",
+    scope: txRow.scope as "shared" | "personal",
     allocations: allocations.map((a) => ({
       participantId: Ids.participantId(a.participant_id),
       amountCents: a.cents as Cents,
@@ -169,6 +167,7 @@ export function transactionToRow(
     total_cents: transaction.totalCents,
     category_id: transaction.categoryId,
     payer_participant_id: transaction.payerParticipantId,
+    scope: transaction.scope,
   };
 }
 

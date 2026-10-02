@@ -33,7 +33,6 @@ export interface Category {
   id: CategoryId;
   name: string;
   groupName: string;
-  scope: BudgetScope;
   archived: boolean;
 }
 

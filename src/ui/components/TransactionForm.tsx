@@ -27,13 +27,12 @@ function today(): string {
 
 function emptyDraft(referenceData: TransactionReferenceData): TransactionDraft {
   const firstHouseholdMember = referenceData.householdMembers[0];
-  const firstSharedCategory =
-    referenceData.categories.find((category) => category.scope === "shared") ?? referenceData.categories[0];
+  const firstCategory = referenceData.categories.find((cat) => !cat.archived) ?? referenceData.categories[0];
 
   return {
     date: today(),
     description: "",
-    categoryId: firstSharedCategory?.id as CategoryId,
+    categoryId: firstCategory?.id as CategoryId,
     payerParticipantId: firstHouseholdMember?.id,
     scope: "shared",
     totalAmountInput: "",
@@ -95,8 +94,8 @@ export function TransactionForm({
   );
 
   const categoriesForScope = useMemo(
-    () => referenceData.categories.filter((category) => category.scope === draft.scope && !category.archived),
-    [draft.scope, referenceData.categories],
+    () => referenceData.categories.filter((category) => !category.archived),
+    [referenceData.categories],
   );
   const paymentMethods = useMemo(
     () =>

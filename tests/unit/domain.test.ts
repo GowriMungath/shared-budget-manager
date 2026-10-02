@@ -20,7 +20,7 @@ import {
   settlementId,
   transactionId,
 } from "../../src/domain/shared/ids.ts";
-import type { BudgetLimit, BudgetPeriod, Category, Goal, Obligation, Participant } from "../../src/domain/shared/types.ts";
+import type { BudgetLimit, BudgetPeriod, Goal, Obligation, Participant } from "../../src/domain/shared/types.ts";
 
 const gowriId = participantId("participant_gowri");
 const nathanielId = participantId("participant_nathaniel");
@@ -86,20 +86,6 @@ const sharedDiningLimit: BudgetLimit = {
   limitCents: parseMoney("200.00"),
 };
 
-const categories: Category[] = [
-  { id: fuelCategoryId, name: "Fuel", groupName: "Transportation", scope: "shared", archived: false },
-  { id: sharedGroceriesCategoryId, name: "Groceries", groupName: "Shared", scope: "shared", archived: false },
-  {
-    id: personalGroceriesCategoryId,
-    name: "Groceries",
-    groupName: "Personal",
-    scope: "personal",
-    archived: false,
-  },
-  { id: diningCategoryId, name: "Dining", groupName: "Food", scope: "shared", archived: false },
-  { id: shoppingCategoryId, name: "Shopping", groupName: "Personal", scope: "personal", archived: false },
-];
-
 function transaction(overrides: Partial<Transaction>): Transaction {
   return {
     id: transactionId(`transaction_${Math.random().toString(36).slice(2)}`),
@@ -158,8 +144,6 @@ describe("financial acceptance scenarios", () => {
   });
 
   test("TEST 2: $45 personal shopping paid by Gowri and allocated 100% to Gowri", () => {
-    expect(categories.find((category) => category.id === shoppingCategoryId)?.scope).toBe("personal");
-
     const shopping = transaction({
       description: "Personal shopping",
       totalCents: parseMoney("45.00"),

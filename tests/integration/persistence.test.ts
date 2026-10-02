@@ -72,9 +72,9 @@ function internalSettlement(): Settlement {
 async function seedReferenceData() {
   await db.participants.bulkPut(participants);
   await db.categories.bulkPut([
-    { id: fuelCategoryId, name: "Fuel", groupName: "Shared", scope: "shared", archived: false },
-    { id: groceriesCategoryId, name: "Groceries", groupName: "Shared", scope: "shared", archived: false },
-    { id: diningCategoryId, name: "Dining", groupName: "Shared", scope: "shared", archived: false },
+    { id: fuelCategoryId, name: "Fuel", groupName: "Shared", archived: false },
+    { id: groceriesCategoryId, name: "Groceries", groupName: "Shared", archived: false },
+    { id: diningCategoryId, name: "Dining", groupName: "Shared", archived: false },
   ]);
   await db.budgetPeriods.put({
     id: periodId,
@@ -103,7 +103,7 @@ describe("IndexedDB persistence", () => {
     expect(await db.households.count()).toBe(1);
     expect(await db.participants.where("memberKey").equals("gowri").count()).toBe(1);
     expect(await db.participants.where("memberKey").equals("nathaniel").count()).toBe(1);
-    expect(await db.categories.count()).toBe(14);
+    expect(await db.categories.count()).toBe(15);
     expect(await db.goals.count()).toBe(2);
   });
 

@@ -53,9 +53,9 @@ beforeEach(async () => {
   await db.open();
   await db.participants.bulkPut(participants);
   await db.categories.bulkPut([
-    { id: shoppingCategoryId, name: "Shopping", groupName: "Personal", scope: "personal", archived: false },
-    { id: fuelCategoryId, name: "Fuel", groupName: "Shared", scope: "shared", archived: false },
-    { id: diningCategoryId, name: "Dining", groupName: "Shared", scope: "shared", archived: false },
+    { id: shoppingCategoryId, name: "Shopping", groupName: "Personal", archived: false },
+    { id: fuelCategoryId, name: "Fuel", groupName: "Shared", archived: false },
+    { id: diningCategoryId, name: "Dining", groupName: "Shared", archived: false },
   ]);
   const repositories = createRepositories(db);
   useCases = new TransactionUseCases({

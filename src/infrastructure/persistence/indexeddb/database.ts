@@ -14,7 +14,7 @@ import type {
 } from "./schema.ts";
 
 export const DATABASE_NAME = "SharedBudgetManagerDB";
-export const DATABASE_VERSION = 1;
+export const DATABASE_VERSION = 2;
 
 export class SharedBudgetManagerDatabase extends Dexie {
   households!: Table<HouseholdRecord, string>;
@@ -35,10 +35,10 @@ export class SharedBudgetManagerDatabase extends Dexie {
     this.version(DATABASE_VERSION).stores({
       households: "id",
       participants: "id, kind, memberKey",
-      categories: "id, scope, archived",
+      categories: "id, name, archived",
       budgetPeriods: "id, startDate, endDate",
       budgetLimits: "id, budgetPeriodId, categoryId, scope, ownerParticipantId",
-      transactions: "id, date, categoryId, payerParticipantId",
+      transactions: "id, date, categoryId, payerParticipantId, scope",
       allocations: "id, transactionId, participantId, position",
       settlements: "id, fromParticipantId, toParticipantId, date",
       paymentMethods: "id, ownerParticipantId",

@@ -48,8 +48,6 @@ export interface BudgetOverview {
 export interface SetBudgetLimitInput {
   budgetPeriodId: BudgetPeriod["id"];
   categoryId: CategoryId;
-  scope: BudgetScope;
-  ownerParticipantId?: ParticipantId;
   amountInput: string;
 }
 
@@ -61,7 +59,6 @@ export interface CreateBudgetPeriodInput {
 
 export interface CreateCategoryInput {
   name: string;
-  scope: BudgetScope;
   groupName?: string;
 }
 

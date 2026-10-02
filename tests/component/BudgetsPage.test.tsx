@@ -52,8 +52,8 @@ async function setup() {
   await db.open();
   await db.participants.bulkPut(participants);
   await db.categories.bulkPut([
-    { id: groceriesId, name: "Groceries", groupName: "Shared", scope: "shared", archived: false },
-    { id: shoppingId, name: "Shopping", groupName: "Personal", scope: "personal", archived: false },
+    { id: groceriesId, name: "Groceries", groupName: "Shared", archived: false },
+    { id: shoppingId, name: "Shopping", groupName: "Personal", archived: false },
   ]);
   await db.budgetPeriods.put({ id: periodId, name: "Trial", startDate: "2026-09-15", endDate: "2026-09-30" });
   const repos = createRepositories(db);
@@ -80,12 +80,12 @@ afterEach(async () => {
 
 async function renderPage() {
   render(<BudgetsPage budgetUseCases={budgets} />);
-  await screen.findByRole("heading", { name: "Shared" });
+  await screen.findByRole("heading", { name: "Household Budget" });
 }
 
 describe("BudgetsPage", () => {
   test("renders budget row values", async () => {
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "200" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "200" });
     await createRepositories(db).transactions.create(transaction({}));
     await renderPage();
 
@@ -108,7 +108,7 @@ describe("BudgetsPage", () => {
 
   test("unsets a limit without hiding spent", async () => {
     const user = userEvent.setup();
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "200" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "200" });
     await createRepositories(db).transactions.create(transaction({}));
     await renderPage();
     await user.click(within(screen.getByRole("row", { name: /Groceries/i })).getByRole("button", { name: "Unset" }));
@@ -127,7 +127,7 @@ describe("BudgetsPage", () => {
   });
 
   test("shows over-budget display", async () => {
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "10" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "10" });
     await createRepositories(db).transactions.create(transaction({}));
     await renderPage();
 
@@ -135,18 +135,16 @@ describe("BudgetsPage", () => {
   });
 
   test("shows ahead-of-pace text", async () => {
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "25" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "25" });
     await createRepositories(db).transactions.create(transaction({}));
     await renderPage();
 
     expect(within(screen.getByRole("row", { name: /Groceries/i })).getByText(/Ahead of pace/)).toBeInTheDocument();
   });
 
-  test("renders shared and personal sections", async () => {
+  test("renders household budget section", async () => {
     await renderPage();
 
-    expect(screen.getByRole("heading", { name: "Shared" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Gowri Personal" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Nathaniel Personal" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Household Budget" })).toBeInTheDocument();
   });
 });

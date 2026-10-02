@@ -66,9 +66,9 @@ beforeEach(async () => {
   await db.open();
   await db.participants.bulkPut(participants);
   await db.categories.bulkPut([
-    { id: groceriesId, name: "Groceries", groupName: "Shared", scope: "shared", archived: false },
-    { id: diningId, name: "Dining", groupName: "Shared", scope: "shared", archived: false },
-    { id: shoppingId, name: "Shopping", groupName: "Personal", scope: "personal", archived: false },
+    { id: groceriesId, name: "Groceries", groupName: "Shared", archived: false },
+    { id: diningId, name: "Dining", groupName: "Shared", archived: false },
+    { id: shoppingId, name: "Shopping", groupName: "Personal", archived: false },
   ]);
   await db.budgetPeriods.put({
     id: periodId,
@@ -96,17 +96,17 @@ afterEach(async () => {
 describe("budget use cases", () => {
   test("TEST 1 $200 Shared Groceries with $20 eligible spend", async () => {
     const repos = createRepositories(db);
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "200" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "200" });
     await repos.transactions.create(transaction({}));
 
-    const groceries = categorySpent(await overview(), "shared", "Groceries");
+    const groceries = categorySpent(await overview(), "household", "Groceries");
     expect(groceries.spentCents).toBe(parseMoney("20.00"));
     expect(groceries.remainingCents).toBe(parseMoney("180.00"));
   });
 
   test("TEST 2 adding another $35 updates spent and remaining", async () => {
     const repos = createRepositories(db);
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "200" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "200" });
     await repos.transactions.create(transaction({}));
     await repos.transactions.create(transaction({
       id: transactionId("budget_txn_35"),
@@ -117,14 +117,14 @@ describe("budget use cases", () => {
       ],
     }));
 
-    const groceries = categorySpent(await overview(), "shared", "Groceries");
+    const groceries = categorySpent(await overview(), "household", "Groceries");
     expect(groceries.spentCents).toBe(parseMoney("55.00"));
     expect(groceries.remainingCents).toBe(parseMoney("145.00"));
   });
 
   test("TEST 3 friend dining excludes external allocations", async () => {
     const repos = createRepositories(db);
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: diningId, scope: "shared", amountInput: "200" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: diningId, amountInput: "200" });
     await repos.transactions.create(transaction({
       categoryId: diningId,
       payerParticipantId: nathanielId,
@@ -137,14 +137,14 @@ describe("budget use cases", () => {
       ],
     }));
 
-    const dining = categorySpent(await overview(), "shared", "Dining");
+    const dining = categorySpent(await overview(), "household", "Dining");
     expect(dining.spentCents).toBe(parseMoney("60.00"));
     expect(dining.remainingCents).toBe(parseMoney("140.00"));
   });
 
   test("TEST 4 personal budget uses owner allocation, not payer", async () => {
     const repos = createRepositories(db);
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: shoppingId, scope: "personal", ownerParticipantId: gowriId, amountInput: "150" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: shoppingId, amountInput: "150" });
     await repos.transactions.create(transaction({
       categoryId: shoppingId,
       scope: "personal",
@@ -153,25 +153,25 @@ describe("budget use cases", () => {
       allocations: [{ participantId: gowriId, amountCents: parseMoney("45.00") }],
     }));
 
-    const shopping = categorySpent(await overview(), gowriId, "Shopping");
+    const shopping = categorySpent(await overview(), "household", "Shopping");
     expect(shopping.spentCents).toBe(parseMoney("45.00"));
     expect(shopping.remainingCents).toBe(parseMoney("105.00"));
   });
 
   test("TEST 5 exact exhaustion", async () => {
     const repos = createRepositories(db);
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "200" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "200" });
     await repos.transactions.create(transaction({ totalCents: parseMoney("200.00"), allocations: [{ participantId: gowriId, amountCents: parseMoney("200.00") }] }));
 
-    expect(categorySpent(await overview(), "shared", "Groceries").remainingCents).toBe(parseMoney("0.00"));
+    expect(categorySpent(await overview(), "household", "Groceries").remainingCents).toBe(parseMoney("0.00"));
   });
 
   test("TEST 6 overspend shows negative remaining", async () => {
     const repos = createRepositories(db);
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "200" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "200" });
     await repos.transactions.create(transaction({ totalCents: parseMoney("220.00"), allocations: [{ participantId: gowriId, amountCents: parseMoney("220.00") }] }));
 
-    const groceries = categorySpent(await overview(), "shared", "Groceries");
+    const groceries = categorySpent(await overview(), "household", "Groceries");
     expect(groceries.remainingCents).toBe(parseMoney("-20.00"));
     expect(groceries.paceStatus).toBe("OVER_BUDGET");
   });
@@ -180,7 +180,7 @@ describe("budget use cases", () => {
     const repos = createRepositories(db);
     await repos.transactions.create(transaction({ totalCents: parseMoney("40.00"), allocations: [{ participantId: gowriId, amountCents: parseMoney("40.00") }] }));
 
-    const groceries = categorySpent(await overview(), "shared", "Groceries");
+    const groceries = categorySpent(await overview(), "household", "Groceries");
     expect(groceries.budgetedCents).toBeUndefined();
     expect(groceries.spentCents).toBe(parseMoney("40.00"));
     expect(groceries.remainingCents).toBeUndefined();
@@ -189,29 +189,29 @@ describe("budget use cases", () => {
 
   test("TEST 8 transactions outside period are excluded", async () => {
     const repos = createRepositories(db);
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "200" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "200" });
     await repos.transactions.create(transaction({ date: "2026-10-01" }));
 
-    expect(categorySpent(await overview(), "shared", "Groceries").spentCents).toBe(parseMoney("0.00"));
+    expect(categorySpent(await overview(), "household", "Groceries").spentCents).toBe(parseMoney("0.00"));
   });
 
   test("TEST 9 start and end boundaries are included", async () => {
     const repos = createRepositories(db);
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "200" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "200" });
     await repos.transactions.create(transaction({ id: transactionId("start"), date: "2026-09-15" }));
     await repos.transactions.create(transaction({ id: transactionId("end"), date: "2026-09-30" }));
 
-    expect(categorySpent(await overview(), "shared", "Groceries").spentCents).toBe(parseMoney("40.00"));
+    expect(categorySpent(await overview(), "household", "Groceries").spentCents).toBe(parseMoney("40.00"));
   });
 
   test("TEST 10 changing and deleting transactions updates derived budget usage", async () => {
     const repos = createRepositories(db);
-    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, scope: "shared", amountInput: "200" });
+    await budgets.setBudgetLimit({ budgetPeriodId: periodId, categoryId: groceriesId, amountInput: "200" });
     const original = transaction({});
     await repos.transactions.create(original);
     await repos.transactions.update({ ...original, totalCents: parseMoney("50.00"), allocations: [{ participantId: gowriId, amountCents: parseMoney("50.00") }] });
-    expect(categorySpent(await overview(), "shared", "Groceries").remainingCents).toBe(parseMoney("150.00"));
+    expect(categorySpent(await overview(), "household", "Groceries").remainingCents).toBe(parseMoney("150.00"));
     await repos.transactions.delete(original.id);
-    expect(categorySpent(await overview(), "shared", "Groceries").remainingCents).toBe(parseMoney("200.00"));
+    expect(categorySpent(await overview(), "household", "Groceries").remainingCents).toBe(parseMoney("200.00"));
   });
 });

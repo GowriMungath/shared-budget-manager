@@ -75,51 +75,33 @@ export async function initializeDatabase(db: SharedBudgetManagerDatabase): Promi
         });
       }
 
-      const sharedCategories = [
-        "Groceries",
-        "Fuel",
-        "Eating Out",
-        "Rent",
-        "Utilities",
-        "Car Insurance",
-        "Car Maintenance",
-        "Entertainment",
-        "Travel",
-        "Miscellaneous",
+      // 15 common categories (scope-neutral)
+      const commonCategories = [
+        { name: "Car Fuel", groupName: "Transportation" },
+        { name: "Car Insurance", groupName: "Transportation" },
+        { name: "Car Maintenance", groupName: "Transportation" },
+        { name: "Groceries", groupName: "Food" },
+        { name: "Clothing", groupName: "Shopping" },
+        { name: "Household Shopping", groupName: "Shopping" },
+        { name: "Personal Care", groupName: "Health" },
+        { name: "Eating Out", groupName: "Food" },
+        { name: "Entertainment & Fun", groupName: "Leisure" },
+        { name: "Travel", groupName: "Leisure" },
+        { name: "Transportation", groupName: "Transport" },
+        { name: "Subscriptions", groupName: "Utilities" },
+        { name: "Rent", groupName: "Housing" },
+        { name: "Utilities", groupName: "Housing" },
+        { name: "Miscellaneous", groupName: "Other" },
       ];
-      const personalCategories = ["Shopping", "Personal Food", "Hair / Beauty", "Personal Miscellaneous"];
 
-      for (const name of sharedCategories) {
-        const exists = await db.categories
-          .where("scope")
-          .equals("shared")
-          .and((category) => category.name === name)
-          .first();
+      for (const category of commonCategories) {
+        const exists = await db.categories.where("name").equals(category.name).first();
 
         if (!exists) {
           await db.categories.add({
             id: uuid(),
-            name,
-            groupName: "Shared",
-            scope: "shared",
-            archived: false,
-          });
-        }
-      }
-
-      for (const name of personalCategories) {
-        const exists = await db.categories
-          .where("scope")
-          .equals("personal")
-          .and((category) => category.name === name)
-          .first();
-
-        if (!exists) {
-          await db.categories.add({
-            id: uuid(),
-            name,
-            groupName: "Personal",
-            scope: "personal",
+            name: category.name,
+            groupName: category.groupName,
             archived: false,
           });
         }

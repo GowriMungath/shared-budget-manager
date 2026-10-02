@@ -67,8 +67,6 @@ export function BudgetsPage({ budgetUseCases }: BudgetsPageProps) {
       await budgetUseCases.setBudgetLimit({
         budgetPeriodId: overview.period.id,
         categoryId: category.categoryId,
-        scope: category.scope,
-        ownerParticipantId: category.ownerParticipantId,
         amountInput: limitInput,
       });
       setEditingLimit(null);
