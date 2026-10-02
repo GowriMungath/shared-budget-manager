@@ -25,7 +25,7 @@ DROP TRIGGER IF EXISTS trg_derive_transaction_scope ON public.transactions;
 DROP FUNCTION IF EXISTS derive_transaction_scope();
 
 CREATE FUNCTION derive_transaction_scope()
-RETURNS TRIGGER AS $
+RETURNS TRIGGER AS $$
 BEGIN
   IF NEW.scope IS NULL THEN
     SELECT c.scope INTO NEW.scope
@@ -35,7 +35,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_derive_transaction_scope
 BEFORE INSERT ON public.transactions
