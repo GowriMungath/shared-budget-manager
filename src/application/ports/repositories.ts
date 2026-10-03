@@ -20,8 +20,10 @@ export interface HouseholdRepository {
 
 export interface ParticipantRepository {
   listAll(): Promise<Participant[]>;
+  listActive(): Promise<Participant[]>;
   getById(id: ParticipantId): Promise<Participant | undefined>;
   save(participant: Participant): Promise<void>;
+  delete(id: ParticipantId): Promise<void>;
 }
 
 export interface CategoryRepository {
@@ -47,6 +49,7 @@ export interface TransactionRepository {
   getById(id: Transaction["id"]): Promise<Transaction | undefined>;
   listByPeriod(startDate: string, endDate: string): Promise<Transaction[]>;
   listAll(): Promise<Transaction[]>;
+  hasParticipantReference(participantId: ParticipantId): Promise<boolean>;
 }
 
 export interface ReferenceDataRepository {

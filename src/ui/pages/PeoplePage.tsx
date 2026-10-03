@@ -9,28 +9,36 @@ import { calculateHouseholdBalance } from "../../application/use-cases/balances/
 interface PeoplePageProps {
   householdMembers: Participant[];
   externalPeople: Participant[];
+  archivedExternalPeople: Participant[];
   transactions: Transaction[];
   settlements: Settlement[];
   onAddPerson: (name: string, note?: string) => Promise<void>;
   onArchivePerson: (participantId: string) => Promise<void>;
+  onUnarchivePerson: (participantId: string) => Promise<void>;
   onRecordSettlement: (from: string, to: string, amountCents: number, date: string, note?: string) => Promise<void>;
   onDeleteSettlement: (settlementId: string) => Promise<void>;
+  onPermanentlyDeletePerson?: (participantId: string) => Promise<void>;
 }
 
 export function PeoplePage({
   householdMembers,
   externalPeople,
+  archivedExternalPeople,
   transactions,
   settlements,
   onAddPerson,
   onArchivePerson,
+  onUnarchivePerson,
   onRecordSettlement,
   onDeleteSettlement,
+  onPermanentlyDeletePerson,
 }: PeoplePageProps) {
   const [showAddPersonForm, setShowAddPersonForm] = useState(false);
   const [showSettlementForm, setShowSettlementForm] = useState(false);
+  const [showArchivedPeople, setShowArchivedPeople] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingSettlementId, setDeletingSettlementId] = useState<string | null>(null);
+  const [deletingPersonId, setDeletingPersonId] = useState<string | null>(null);
 
   const allParticipants = [...householdMembers, ...externalPeople];
 
@@ -134,13 +142,24 @@ export function PeoplePage({
                       <p className="font-medium">{person.name}</p>
                       <p className="text-xs text-stone-500">External</p>
                     </div>
-                    <button
-                      onClick={() => onArchivePerson(person.id)}
-                      className="focus-ring rounded-md p-1 hover:bg-stone-100"
-                      title="Archive person"
-                    >
-                      <Archive size={16} className="text-stone-500" />
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onArchivePerson(person.id)}
+                        className="focus-ring rounded-md p-1 hover:bg-stone-100"
+                        title="Archive person"
+                      >
+                        <Archive size={16} className="text-stone-500" />
+                      </button>
+                      {onPermanentlyDeletePerson && (
+                        <button
+                          onClick={() => setDeletingPersonId(person.id)}
+                          className="focus-ring rounded-md p-1 hover:bg-red-50"
+                          title="Permanently delete person (requires no transaction/settlement history)"
+                        >
+                          <Trash2 size={16} className="text-stone-500 hover:text-red-600" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -155,6 +174,48 @@ export function PeoplePage({
           <Plus size={16} />
           Add Person
         </button>
+
+        {/* Archived People Toggle */}
+        {archivedExternalPeople.length > 0 && (
+          <div className="mt-6 border-t border-stone-200 pt-4">
+            <button
+              onClick={() => setShowArchivedPeople(!showArchivedPeople)}
+              className="text-sm font-medium text-stone-700 hover:text-stone-900"
+            >
+              {showArchivedPeople ? "Hide" : "Show"} Archived People ({archivedExternalPeople.length})
+            </button>
+
+            {showArchivedPeople && (
+              <div className="mt-3 space-y-2">
+                {archivedExternalPeople.map((person) => (
+                  <div key={person.id} className="flex items-center justify-between rounded-md border border-stone-100 bg-stone-50 p-3">
+                    <div>
+                      <p className="font-medium text-stone-600">{person.name}</p>
+                      <p className="text-xs text-stone-500">Archived external</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onUnarchivePerson(person.id)}
+                        className="focus-ring rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                      >
+                        Restore
+                      </button>
+                      {onPermanentlyDeletePerson && (
+                        <button
+                          onClick={() => setDeletingPersonId(person.id)}
+                          className="focus-ring rounded-md p-1 hover:bg-red-50"
+                          title="Permanently delete person (requires no transaction/settlement history)"
+                        >
+                          <Trash2 size={16} className="text-stone-500 hover:text-red-600" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Add Person Form */}
@@ -264,6 +325,43 @@ export function PeoplePage({
               </button>
               <button
                 onClick={() => setDeletingSettlementId(null)}
+                className="focus-ring rounded-md border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Person Confirmation Dialog */}
+      {deletingPersonId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="rounded-lg border border-stone-200 bg-white p-6 shadow-lg max-w-sm">
+            <h3 className="text-lg font-semibold">Permanently Delete Person?</h3>
+            <p className="mt-2 text-sm text-stone-600">
+              This person will be permanently removed from your household. They can only be deleted if they have no transaction or settlement history.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={async () => {
+                  try {
+                    if (onPermanentlyDeletePerson) {
+                      await onPermanentlyDeletePerson(deletingPersonId);
+                    }
+                    setDeletingPersonId(null);
+                    setError(null);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Failed to delete person");
+                    setDeletingPersonId(null);
+                  }
+                }}
+                className="focus-ring rounded-md border border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setDeletingPersonId(null)}
                 className="focus-ring rounded-md border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-50"
               >
                 Cancel

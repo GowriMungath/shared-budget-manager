@@ -13,6 +13,7 @@ interface PeoplePageContainerProps {
 export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps) {
   const [householdMembers, setHouseholdMembers] = useState<Participant[]>([]);
   const [externalPeople, setExternalPeople] = useState<Participant[]>([]);
+  const [archivedExternalPeople, setArchivedExternalPeople] = useState<Participant[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,16 +23,22 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
     try {
       setError(null);
       setLoading(true);
-      const [members, external, settlements_, allTransactions] = await Promise.all([
+      const [members, external, settlements_, allTransactions, allParticipants] = await Promise.all([
         peopleUseCases.listHouseholdMembers(),
         peopleUseCases.listActiveExternalPeople(),
         peopleUseCases.listSettlements(),
         peopleUseCases.listAllTransactions(),
+        peopleUseCases.listAllParticipants(),
       ]);
       setHouseholdMembers(members);
       setExternalPeople(external);
       setTransactions(allTransactions);
       setSettlements(settlements_);
+      // Filter archived external people (not household members)
+      const archived = allParticipants.filter(
+        (p) => p.archivedAt && p.kind === "external"
+      );
+      setArchivedExternalPeople(archived);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
@@ -59,6 +66,14 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
     [peopleUseCases, loadData]
   );
 
+  const handleUnarchivePerson = useCallback(
+    async (participantId: string) => {
+      await peopleUseCases.unarchiveParticipant(participantId as ParticipantId);
+      await loadData();
+    },
+    [peopleUseCases, loadData]
+  );
+
   const handleRecordSettlement = useCallback(
     async (from: string, to: string, amountCents: number, date: string, note?: string) => {
       await peopleUseCases.createSettlement({
@@ -76,6 +91,14 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
   const handleDeleteSettlement = useCallback(
     async (settlementId: string) => {
       await peopleUseCases.deleteSettlement(settlementId);
+      await loadData();
+    },
+    [peopleUseCases, loadData]
+  );
+
+  const handlePermanentlyDeletePerson = useCallback(
+    async (participantId: string) => {
+      await peopleUseCases.permanentlyDeleteParticipant(participantId as ParticipantId);
       await loadData();
     },
     [peopleUseCases, loadData]
@@ -101,12 +124,15 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
     <PeoplePage
       householdMembers={householdMembers}
       externalPeople={externalPeople}
+      archivedExternalPeople={archivedExternalPeople}
       transactions={transactions}
       settlements={settlements}
       onAddPerson={handleAddPerson}
       onArchivePerson={handleArchivePerson}
+      onUnarchivePerson={handleUnarchivePerson}
       onRecordSettlement={handleRecordSettlement}
       onDeleteSettlement={handleDeleteSettlement}
+      onPermanentlyDeletePerson={handlePermanentlyDeletePerson}
     />
   );
 }

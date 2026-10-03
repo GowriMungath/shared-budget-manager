@@ -47,10 +47,12 @@ describe("PeoplePage", () => {
       <PeoplePage
         householdMembers={householdMembers}
         externalPeople={externalPeople}
+        archivedExternalPeople={[]}
         transactions={[transaction]}
         settlements={[]}
         onAddPerson={async () => undefined}
         onArchivePerson={async () => undefined}
+        onUnarchivePerson={async () => undefined}
         onRecordSettlement={async () => undefined}
         onDeleteSettlement={async () => undefined}
       />
@@ -72,10 +74,12 @@ describe("PeoplePage", () => {
       <PeoplePage
         householdMembers={householdMembers}
         externalPeople={externalPeople}
+        archivedExternalPeople={[]}
         transactions={[]}
         settlements={[]}
         onAddPerson={async () => undefined}
         onArchivePerson={async () => undefined}
+        onUnarchivePerson={async () => undefined}
         onRecordSettlement={async () => undefined}
         onDeleteSettlement={async () => undefined}
       />
@@ -109,10 +113,12 @@ describe("PeoplePage", () => {
       <PeoplePage
         householdMembers={householdMembers}
         externalPeople={[]}
+        archivedExternalPeople={[]}
         transactions={[transaction]}
         settlements={[]}
         onAddPerson={async () => undefined}
         onArchivePerson={async () => undefined}
+        onUnarchivePerson={async () => undefined}
         onRecordSettlement={async () => undefined}
         onDeleteSettlement={async () => undefined}
       />
@@ -143,10 +149,12 @@ describe("PeoplePage", () => {
       <PeoplePage
         householdMembers={householdMembers}
         externalPeople={[]}
+        archivedExternalPeople={[]}
         transactions={[]}
         settlements={[settlement]}
         onAddPerson={async () => undefined}
         onArchivePerson={async () => undefined}
+        onUnarchivePerson={async () => undefined}
         onRecordSettlement={async () => undefined}
         onDeleteSettlement={mockDeleteSettlement}
       />
@@ -190,10 +198,12 @@ describe("PeoplePage", () => {
       <PeoplePage
         householdMembers={householdMembers}
         externalPeople={[]}
+        archivedExternalPeople={[]}
         transactions={[]}
         settlements={[settlement]}
         onAddPerson={async () => undefined}
         onArchivePerson={async () => undefined}
+        onUnarchivePerson={async () => undefined}
         onRecordSettlement={async () => undefined}
         onDeleteSettlement={mockDeleteSettlement}
       />

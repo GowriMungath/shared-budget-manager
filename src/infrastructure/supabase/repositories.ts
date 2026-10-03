@@ -94,6 +94,17 @@ export class SupabaseParticipantRepository implements ParticipantRepository {
     return (data || []).map(participantFromRow);
   }
 
+  async listActive(): Promise<Participant[]> {
+    const { data, error } = await supabase
+      .from("participants")
+      .select("*")
+      .eq("household_id", this.householdId)
+      .is("archived_at", null);
+
+    if (error) throw new Error(`Failed to list active participants: ${error.message}`);
+    return (data || []).map(participantFromRow);
+  }
+
   async getById(id: ParticipantId): Promise<Participant | undefined> {
     const { data, error } = await supabase
       .from("participants")
@@ -114,6 +125,16 @@ export class SupabaseParticipantRepository implements ParticipantRepository {
     const row = participantToRow(participant, this.householdId);
     const { error } = await supabase.from("participants").upsert(row);
     if (error) throw new Error(`Failed to save participant: ${error.message}`);
+  }
+
+  async delete(id: ParticipantId): Promise<void> {
+    const { error } = await supabase
+      .from("participants")
+      .delete()
+      .eq("id", id)
+      .eq("household_id", this.householdId);
+
+    if (error) throw new Error(`Failed to delete participant: ${error.message}`);
   }
 }
 
@@ -297,6 +318,31 @@ export class SupabaseTransactionRepository implements TransactionRepository {
     }
 
     return transactions;
+  }
+
+  async hasParticipantReference(participantId: ParticipantId): Promise<boolean> {
+    // Check if participant is a payer
+    const { count: payerCount, error: payerError } = await supabase
+      .from("transactions")
+      .select("*", { count: "exact", head: true })
+      .eq("household_id", this.householdId)
+      .eq("payer_participant_id", participantId)
+      .is("deleted_at", null);
+
+    if (payerError) throw new Error(`Failed to check transaction references: ${payerError.message}`);
+    if (payerCount && payerCount > 0) {
+      return true;
+    }
+
+    // Check if participant is in any allocation
+    const { count: allocationCount, error: allocError } = await supabase
+      .from("allocations")
+      .select("*", { count: "exact", head: true })
+      .eq("participant_id", participantId)
+      .is("deleted_at", null);
+
+    if (allocError) throw new Error(`Failed to check allocation references: ${allocError.message}`);
+    return allocationCount ? allocationCount > 0 : false;
   }
 }
 

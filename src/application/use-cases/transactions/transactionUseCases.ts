@@ -77,17 +77,21 @@ export class TransactionUseCases {
   constructor(private readonly dependencies: TransactionUseCaseDependencies) {}
 
   async getReferenceData(): Promise<TransactionReferenceData> {
-    const [participants, categories, paymentMethods] = await Promise.all([
+    const [allParticipants, categories, paymentMethods] = await Promise.all([
       this.dependencies.participants.listAll(),
       this.dependencies.categories.listAll(),
       this.dependencies.paymentMethods.listAll(),
     ]);
+    
+    // Filter out archived participants for new record creation forms
+    const participants = allParticipants.filter((p) => !p.archivedAt);
     const householdMembers = participants.filter((participant) => participant.kind === "household-member");
+    const externalParticipants = participants.filter((participant) => participant.kind === "external");
 
     return {
       participants,
       householdMembers,
-      externalParticipants: participants.filter((participant) => participant.kind === "external"),
+      externalParticipants,
       categories,
       paymentMethods,
     };

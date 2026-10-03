@@ -74,6 +74,13 @@ export class DexieParticipantRepository implements ParticipantRepository {
     return (await this.db.participants.toArray()).map(participantFromRecord);
   }
 
+  async listActive(): Promise<Participant[]> {
+    const records = await this.db.participants.toArray();
+    return records
+      .filter((record) => !record.archivedAt)
+      .map(participantFromRecord);
+  }
+
   async getById(id: ParticipantId): Promise<Participant | undefined> {
     const record = await this.db.participants.get(id);
     return record ? participantFromRecord(record) : undefined;
@@ -81,6 +88,10 @@ export class DexieParticipantRepository implements ParticipantRepository {
 
   async save(participant: Participant): Promise<void> {
     await this.db.participants.put(participantToRecord(participant));
+  }
+
+  async delete(id: ParticipantId): Promise<void> {
+    await this.db.participants.delete(id);
   }
 }
 
@@ -182,6 +193,18 @@ export class DexieTransactionRepository implements TransactionRepository {
     return Promise.all(records.map((record) => this.getById(record.id as Transaction["id"]))).then((items) =>
       items.filter((item): item is Transaction => item !== undefined),
     );
+  }
+
+  async hasParticipantReference(participantId: ParticipantId): Promise<boolean> {
+    // Check if participant is a payer
+    const payerCount = await this.db.transactions.where("payerParticipantId").equals(participantId).count();
+    if (payerCount > 0) {
+      return true;
+    }
+
+    // Check if participant is in any allocation
+    const allocationCount = await this.db.allocations.where("participantId").equals(participantId).count();
+    return allocationCount > 0;
   }
 }
 

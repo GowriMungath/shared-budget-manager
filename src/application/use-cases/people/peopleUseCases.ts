@@ -245,4 +245,44 @@ export class PeopleUseCases {
     // Future: add soft-delete field and preserve historical records
     await this.dependencies.settlements.delete(settlementId as unknown as Settlement["id"]);
   }
+
+  /**
+   * Permanently delete external participant
+   * Only allowed if participant has no references in transactions/settlements
+   * Household members cannot be deleted
+   */
+  async permanentlyDeleteParticipant(participantId: ParticipantId): Promise<void> {
+    const participant = await this.dependencies.participants.getById(participantId);
+    if (!participant) {
+      throw new Error(`Participant not found: ${participantId}`);
+    }
+
+    if (participant.kind === "household-member") {
+      throw new Error(`Cannot delete household members`);
+    }
+
+    // Check for references in settlements
+    const allSettlements = await this.dependencies.settlements.listAll();
+    const hasSettlementReferences = allSettlements.some(
+      (s) => s.fromParticipantId === participantId || s.toParticipantId === participantId
+    );
+
+    if (hasSettlementReferences) {
+      throw new Error(
+        `Cannot permanently delete ${participant.name}: this person has settlement history. They can only be archived.`
+      );
+    }
+
+    // Check for transaction references efficiently without loading all data
+    const hasTransactionReferences = await this.dependencies.transactions.hasParticipantReference(participantId);
+
+    if (hasTransactionReferences) {
+      throw new Error(
+        `Cannot permanently delete ${participant.name}: this person has transaction history. They can only be archived.`
+      );
+    }
+
+    // Safe to permanently delete
+    await this.dependencies.participants.delete(participantId);
+  }
 }

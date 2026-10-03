@@ -33,6 +33,7 @@ const ids: IdService = { createId: () => "component_transaction" };
 function makeUseCases() {
   const participantRepository: ParticipantRepository = {
     listAll: async () => referenceData.participants,
+    listActive: async () => referenceData.participants.filter((p) => !p.archivedAt),
     getById: async () => undefined,
     save: async (participant) => {
       referenceData = {
@@ -41,6 +42,7 @@ function makeUseCases() {
         externalParticipants: [...referenceData.externalParticipants, participant],
       };
     },
+    delete: async () => undefined,
   };
   const categoryRepository: CategoryRepository = {
     listAll: async () => referenceData.categories,
@@ -57,6 +59,7 @@ function makeUseCases() {
     getById: async () => undefined,
     listByPeriod: async () => [],
     listAll: async () => [],
+    hasParticipantReference: async () => false,
   };
 
   return new TransactionUseCases({
