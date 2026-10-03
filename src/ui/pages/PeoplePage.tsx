@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, Archive } from "lucide-react";
+import { Plus, Archive, Trash2 } from "lucide-react";
 import type { Participant } from "../../domain/shared/types.ts";
 import type { Settlement } from "../../domain/settlement/settlement.ts";
 import type { Transaction } from "../../domain/ledger/transaction.ts";
@@ -14,6 +14,7 @@ interface PeoplePageProps {
   onAddPerson: (name: string, note?: string) => Promise<void>;
   onArchivePerson: (participantId: string) => Promise<void>;
   onRecordSettlement: (from: string, to: string, amountCents: number, date: string, note?: string) => Promise<void>;
+  onDeleteSettlement: (settlementId: string) => Promise<void>;
 }
 
 export function PeoplePage({
@@ -24,10 +25,12 @@ export function PeoplePage({
   onAddPerson,
   onArchivePerson,
   onRecordSettlement,
+  onDeleteSettlement,
 }: PeoplePageProps) {
   const [showAddPersonForm, setShowAddPersonForm] = useState(false);
   const [showSettlementForm, setShowSettlementForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletingSettlementId, setDeletingSettlementId] = useState<string | null>(null);
 
   const allParticipants = [...householdMembers, ...externalPeople];
 
@@ -223,12 +226,52 @@ export function PeoplePage({
                     <p className="text-xs text-stone-500">{settlement.date}</p>
                     {settlement.notes && <p className="mt-1 text-xs text-stone-600">{settlement.notes}</p>}
                   </div>
+                  <button
+                    onClick={() => setDeletingSettlementId(settlement.id)}
+                    className="focus-ring ml-3 rounded-md p-1 hover:bg-red-50"
+                    title="Delete settlement"
+                  >
+                    <Trash2 size={16} className="text-stone-500 hover:text-red-600" />
+                  </button>
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {deletingSettlementId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="rounded-lg border border-stone-200 bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-semibold">Delete Settlement?</h3>
+            <p className="mt-2 text-sm text-stone-600">This action cannot be undone. The settlement will be permanently deleted.</p>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={async () => {
+                  try {
+                    await onDeleteSettlement(deletingSettlementId);
+                    setDeletingSettlementId(null);
+                    setError(null);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Failed to delete settlement");
+                    setDeletingSettlementId(null);
+                  }
+                }}
+                className="focus-ring rounded-md border border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setDeletingSettlementId(null)}
+                className="focus-ring rounded-md border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

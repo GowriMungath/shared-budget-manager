@@ -73,6 +73,14 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
     [peopleUseCases, loadData]
   );
 
+  const handleDeleteSettlement = useCallback(
+    async (settlementId: string) => {
+      await peopleUseCases.deleteSettlement(settlementId);
+      await loadData();
+    },
+    [peopleUseCases, loadData]
+  );
+
   if (loading) {
     return (
       <div className="rounded-md border border-stone-200 bg-white p-5">
@@ -98,6 +106,7 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
       onAddPerson={handleAddPerson}
       onArchivePerson={handleArchivePerson}
       onRecordSettlement={handleRecordSettlement}
+      onDeleteSettlement={handleDeleteSettlement}
     />
   );
 }

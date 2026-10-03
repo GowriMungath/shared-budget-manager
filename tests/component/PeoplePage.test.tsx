@@ -1,10 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { parseMoney } from "../../src/domain/money/money.ts";
-import { categoryId, participantId, transactionId } from "../../src/domain/shared/ids.ts";
+import { categoryId, participantId, transactionId, settlementId } from "../../src/domain/shared/ids.ts";
 import type { Participant } from "../../src/domain/shared/types.ts";
 import type { Transaction } from "../../src/domain/ledger/transaction.ts";
+import type { Settlement } from "../../src/domain/settlement/settlement.ts";
 import { PeoplePage } from "../../src/ui/pages/PeoplePage.tsx";
 
 const gowriId = participantId("people_gowri");
@@ -50,6 +52,7 @@ describe("PeoplePage", () => {
         onAddPerson={async () => undefined}
         onArchivePerson={async () => undefined}
         onRecordSettlement={async () => undefined}
+        onDeleteSettlement={async () => undefined}
       />
     );
 
@@ -74,6 +77,7 @@ describe("PeoplePage", () => {
         onAddPerson={async () => undefined}
         onArchivePerson={async () => undefined}
         onRecordSettlement={async () => undefined}
+        onDeleteSettlement={async () => undefined}
       />
     );
 
@@ -110,11 +114,101 @@ describe("PeoplePage", () => {
         onAddPerson={async () => undefined}
         onArchivePerson={async () => undefined}
         onRecordSettlement={async () => undefined}
+        onDeleteSettlement={async () => undefined}
       />
     );
 
     // Internal balance should show
     expect(screen.getByText(/Nathaniel owes Gowri/)).toBeInTheDocument();
     expect(screen.queryByText("Settled up")).not.toBeInTheDocument();
+  });
+
+  test("Delete settlement shows confirmation dialog and calls handler", async () => {
+    const user = userEvent.setup();
+    const mockDeleteSettlement = vi.fn();
+
+    const settlement: Settlement = {
+      id: settlementId("settlement_test_delete"),
+      fromParticipantId: gowriId,
+      toParticipantId: nathanielId,
+      amountCents: parseMoney("50.00"),
+      date: "2026-10-03",
+      type: "internal",
+      notes: "Test settlement",
+    };
+
+    const householdMembers = participants.filter((p) => p.kind === "household-member");
+
+    render(
+      <PeoplePage
+        householdMembers={householdMembers}
+        externalPeople={[]}
+        transactions={[]}
+        settlements={[settlement]}
+        onAddPerson={async () => undefined}
+        onArchivePerson={async () => undefined}
+        onRecordSettlement={async () => undefined}
+        onDeleteSettlement={mockDeleteSettlement}
+      />
+    );
+
+    // Settlement should be visible
+    expect(screen.getByText("Gowri paid Nathaniel $50.00")).toBeInTheDocument();
+
+    // Click delete button
+    const deleteButton = screen.getByTitle("Delete settlement");
+    await user.click(deleteButton);
+
+    // Confirmation dialog should appear
+    expect(screen.getByText("Delete Settlement?")).toBeInTheDocument();
+    expect(screen.getByText("This action cannot be undone. The settlement will be permanently deleted.")).toBeInTheDocument();
+
+    // Click confirm delete
+    const confirmButton = screen.getByRole("button", { name: "Delete" });
+    await user.click(confirmButton);
+
+    // Handler should be called with correct settlement ID
+    expect(mockDeleteSettlement).toHaveBeenCalledWith(settlement.id);
+  });
+
+  test("Delete settlement cancels on cancel button", async () => {
+    const user = userEvent.setup();
+    const mockDeleteSettlement = vi.fn();
+
+    const settlement: Settlement = {
+      id: settlementId("settlement_test_cancel"),
+      fromParticipantId: gowriId,
+      toParticipantId: nathanielId,
+      amountCents: parseMoney("30.00"),
+      date: "2026-10-03",
+      type: "internal",
+    };
+
+    const householdMembers = participants.filter((p) => p.kind === "household-member");
+
+    render(
+      <PeoplePage
+        householdMembers={householdMembers}
+        externalPeople={[]}
+        transactions={[]}
+        settlements={[settlement]}
+        onAddPerson={async () => undefined}
+        onArchivePerson={async () => undefined}
+        onRecordSettlement={async () => undefined}
+        onDeleteSettlement={mockDeleteSettlement}
+      />
+    );
+
+    // Click delete button
+    const deleteButton = screen.getByTitle("Delete settlement");
+    await user.click(deleteButton);
+
+    // Click cancel
+    const cancelButton = screen.getByRole("button", { name: "Cancel" });
+    await user.click(cancelButton);
+
+    // Dialog should disappear and handler should not be called
+    expect(screen.queryByText("Delete Settlement?")).not.toBeInTheDocument();
+    expect(mockDeleteSettlement).not.toHaveBeenCalled();
   });
 });
