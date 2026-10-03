@@ -22,14 +22,15 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
     try {
       setError(null);
       setLoading(true);
-      const [members, external, settlements_] = await Promise.all([
+      const [members, external, settlements_, allTransactions] = await Promise.all([
         peopleUseCases.listHouseholdMembers(),
         peopleUseCases.listActiveExternalPeople(),
         peopleUseCases.listSettlements(),
+        peopleUseCases.listAllTransactions(),
       ]);
       setHouseholdMembers(members);
       setExternalPeople(external);
-      setTransactions([]); // TODO: Load actual transactions from use-case
+      setTransactions(allTransactions);
       setSettlements(settlements_);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");

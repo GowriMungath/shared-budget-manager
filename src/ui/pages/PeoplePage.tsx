@@ -37,9 +37,10 @@ export function PeoplePage({
   }, [householdMembers, transactions, settlements, allParticipants]);
 
   const renderHouseholdBalance = () => {
-    const { internal } = householdBalance;
+    const { internal, external } = householdBalance;
 
-    if (internal.amountCents === 0) {
+    // Show "Settled up" only if BOTH internal and external balances are zero
+    if (internal.amountCents === 0 && external.length === 0) {
       return (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4">
           <p className="text-sm font-semibold text-emerald-900">Settled up</p>
@@ -48,12 +49,15 @@ export function PeoplePage({
       );
     }
 
-    if (internal.fromParticipantId && internal.toParticipantId) {
+    // Show internal balance if present
+    const balanceElements = [];
+
+    if (internal.amountCents !== 0 && internal.fromParticipantId && internal.toParticipantId) {
       const fromName = allParticipants.find((p) => p.id === internal.fromParticipantId)?.name || "Unknown";
       const toName = allParticipants.find((p) => p.id === internal.toParticipantId)?.name || "Unknown";
 
-      return (
-        <div className="rounded-md border border-blue-200 bg-blue-50 p-4">
+      balanceElements.push(
+        <div key="internal-balance" className="rounded-md border border-blue-200 bg-blue-50 p-4">
           <p className="text-sm font-semibold text-blue-900">
             {fromName} owes {toName} {dollars(internal.amountCents)}
           </p>
@@ -61,7 +65,23 @@ export function PeoplePage({
       );
     }
 
-    return null;
+    // Show external receivables
+    if (external.length > 0) {
+      external.forEach((receivable) => {
+        const fromName = allParticipants.find((p) => p.id === receivable.fromParticipantId)?.name || "Unknown";
+        const toName = allParticipants.find((p) => p.id === receivable.toParticipantId)?.name || "Unknown";
+
+        balanceElements.push(
+          <div key={`${receivable.fromParticipantId}-${receivable.toParticipantId}`} className="rounded-md border border-blue-200 bg-blue-50 p-4">
+            <p className="text-sm font-semibold text-blue-900">
+              {fromName} owes {toName} {dollars(receivable.amountCents)}
+            </p>
+          </div>
+        );
+      });
+    }
+
+    return <div className="space-y-2">{balanceElements}</div>;
   };
 
   return (

@@ -147,6 +147,13 @@ export class PeopleUseCases {
   }
 
   /**
+   * List all transactions for balance calculations
+   */
+  async listAllTransactions() {
+    return this.dependencies.transactions.listAll();
+  }
+
+  /**
    * Create settlement record
    * Type is DERIVED from participant kinds, not user-controlled
    *
