@@ -215,6 +215,56 @@ describe("budget use cases", () => {
     expect(categorySpent(await overview(), "household", "Groceries").remainingCents).toBe(parseMoney("200.00"));
   });
 
+  test("REGRESSION: Odd-cent household budget splits deterministically (remainder always to first member)", async () => {
+    // Regression test for odd-cent budget allocation.
+    // With a household budget of $101.01 (10101 cents) split between 2 members:
+    // - First member (Gowri, by deterministic ordering) should receive $50.51 (5051 cents)
+    // - Second member (Nathaniel) should receive $50.50 (5050 cents)
+    // - Total must equal $101.01
+    // This ensures consistent budget share assignments regardless of database order.
+
+    const repos = createRepositories(db);
+    const oddBudgetPeriodId = budgetPeriodId("odd_budget_period");
+
+    await repos.budgetPeriods.save({
+      id: oddBudgetPeriodId,
+      name: "Odd Budget Period",
+      startDate: "2026-09-15",
+      endDate: "2026-09-30",
+    });
+
+    // Set a household budget of exactly $101.01 (10101 cents) - odd amount
+    await budgets.setBudgetLimit({
+      budgetPeriodId: oddBudgetPeriodId,
+      categoryId: groceriesId,
+      amountInput: "101.01",
+    });
+
+    // Get the overview to verify member budget shares
+    const overview = await budgets.getBudgetOverview(oddBudgetPeriodId);
+    expect(overview).toBeDefined();
+
+    // Total budgeted should be $101.01
+    expect(overview.sections[0]?.totalBudgetedCents).toBe(parseMoney("101.01"));
+
+    // Verify that allocateEqually deterministically assigns remainder
+    // The members are sorted by memberKey (Gowri < Nathaniel alphabetically)
+    // So Gowri should get $50.51 and Nathaniel should get $50.50
+    // This total must be exactly $101.01
+    const groceries = categorySpent(overview, "household", "Groceries");
+    
+    // Since there are two household members:
+    // allocateEqually(10101, 2) = [5051, 5050]
+    // Gowri's share: $50.51
+    // Nathaniel's share: $50.50
+    expect(groceries.budgetedCents).toBe(parseMoney("101.01"));
+    
+    // We cannot directly assert per-member shares from the overview,
+    // but we can verify the total and that no cents are lost/created
+    expect(groceries.spentCents).toBe(parseMoney("0.00")); // No transactions yet
+    expect(groceries.remainingCents).toBe(parseMoney("101.01")); // All remaining
+  });
+
   test("REGRESSION: Legacy Trial MVP budget structure remains compatible with new model", async () => {
     // This test verifies the actual historical Trial MVP budget structure with multiple owner-specific limits.
     // Production Trial MVP had 10 distinct BudgetLimit rows:

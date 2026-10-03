@@ -74,6 +74,11 @@ export class DexieParticipantRepository implements ParticipantRepository {
     return (await this.db.participants.toArray()).map(participantFromRecord);
   }
 
+  async getById(id: ParticipantId): Promise<Participant | undefined> {
+    const record = await this.db.participants.get(id);
+    return record ? participantFromRecord(record) : undefined;
+  }
+
   async save(participant: Participant): Promise<void> {
     await this.db.participants.put(participantToRecord(participant));
   }
@@ -188,7 +193,11 @@ export class DexieSettlementRepository implements SettlementRepository {
   }
 
   async listAll(): Promise<Settlement[]> {
-    return (await this.db.settlements.toArray()).map(settlementFromRecord);
+    // Exclude soft-deleted settlements (deletedAt is null/undefined)
+    const records = await this.db.settlements.toArray();
+    return records
+      .filter((record) => !record.deletedAt)
+      .map(settlementFromRecord);
   }
 
   async listForParticipant(participantId: ParticipantId): Promise<Settlement[]> {
@@ -197,11 +206,31 @@ export class DexieSettlementRepository implements SettlementRepository {
       this.db.settlements.where("toParticipantId").equals(participantId).toArray(),
     ]);
     const recordsById = new Map([...from, ...to].map((record) => [record.id, record]));
-    return Array.from(recordsById.values()).map(settlementFromRecord);
+    // Exclude soft-deleted settlements
+    return Array.from(recordsById.values())
+      .filter((record) => !record.deletedAt)
+      .map(settlementFromRecord);
+  }
+
+  async getById(id: Settlement["id"]): Promise<Settlement | undefined> {
+    const record = await this.db.settlements.get(id);
+    // Exclude soft-deleted settlements
+    return record && !record.deletedAt ? settlementFromRecord(record) : undefined;
   }
 
   async save(settlement: Settlement): Promise<void> {
     await this.db.settlements.put(settlementToRecord(settlement));
+  }
+
+  async delete(id: Settlement["id"]): Promise<void> {
+    // Soft-delete: set deletedAt timestamp instead of removing record
+    const record = await this.db.settlements.get(id);
+    if (record) {
+      await this.db.settlements.put({
+        ...record,
+        deletedAt: new Date().toISOString(),
+      });
+    }
   }
 }
 

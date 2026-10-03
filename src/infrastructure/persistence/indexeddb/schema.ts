@@ -16,6 +16,7 @@ export const participantRecordSchema = z.object({
   name: z.string(),
   kind: z.enum(["household-member", "external"]),
   memberKey: z.string().optional(),
+  archivedAt: z.string().optional(), // ISO 8601 timestamp; undefined means active
 });
 
 export const categoryRecordSchema = z.object({
@@ -70,6 +71,7 @@ export const settlementRecordSchema = z.object({
   date: isoDateSchema,
   type: z.enum(["internal", "external"]),
   notes: z.string().optional(),
+  deletedAt: z.string().optional(), // ISO 8601 timestamp; undefined means active
 });
 
 export const paymentMethodRecordSchema = z.object({

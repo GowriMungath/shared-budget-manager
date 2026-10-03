@@ -1,0 +1,413 @@
+import { useMemo, useState } from "react";
+import { Plus, Archive } from "lucide-react";
+import type { Participant } from "../../domain/shared/types.ts";
+import type { Settlement } from "../../domain/settlement/settlement.ts";
+import type { Transaction } from "../../domain/ledger/transaction.ts";
+import { dollars } from "../format.ts";
+import { calculateHouseholdBalance } from "../../application/use-cases/balances/balanceUseCases.ts";
+
+interface PeoplePageProps {
+  householdMembers: Participant[];
+  externalPeople: Participant[];
+  transactions: Transaction[];
+  settlements: Settlement[];
+  onAddPerson: (name: string, note?: string) => Promise<void>;
+  onArchivePerson: (participantId: string) => Promise<void>;
+  onRecordSettlement: (from: string, to: string, amountCents: number, date: string, note?: string) => Promise<void>;
+}
+
+export function PeoplePage({
+  householdMembers,
+  externalPeople,
+  transactions,
+  settlements,
+  onAddPerson,
+  onArchivePerson,
+  onRecordSettlement,
+}: PeoplePageProps) {
+  const [showAddPersonForm, setShowAddPersonForm] = useState(false);
+  const [showSettlementForm, setShowSettlementForm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const allParticipants = [...householdMembers, ...externalPeople];
+
+  const householdBalance = useMemo(() => {
+    const memberIds = householdMembers.map((m) => m.id);
+    return calculateHouseholdBalance(memberIds, transactions, settlements, allParticipants);
+  }, [householdMembers, transactions, settlements, allParticipants]);
+
+  const renderHouseholdBalance = () => {
+    const { internal } = householdBalance;
+
+    if (internal.amountCents === 0) {
+      return (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-semibold text-emerald-900">Settled up</p>
+          <p className="mt-1 text-sm text-emerald-700">Household members have no outstanding balances.</p>
+        </div>
+      );
+    }
+
+    if (internal.fromParticipantId && internal.toParticipantId) {
+      const fromName = allParticipants.find((p) => p.id === internal.fromParticipantId)?.name || "Unknown";
+      const toName = allParticipants.find((p) => p.id === internal.toParticipantId)?.name || "Unknown";
+
+      return (
+        <div className="rounded-md border border-blue-200 bg-blue-50 p-4">
+          <p className="text-sm font-semibold text-blue-900">
+            {fromName} owes {toName} {dollars(internal.amountCents)}
+          </p>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <section className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">People & Settlements</h1>
+          <p className="mt-1 text-sm text-stone-600">Track what everyone owes and record repayments.</p>
+        </div>
+      </div>
+
+      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
+
+      {/* Household Balance */}
+      <div>{renderHouseholdBalance()}</div>
+
+      {/* People Section */}
+      <div className="rounded-md border border-stone-200 bg-white p-5">
+        <h2 className="font-semibold">People</h2>
+
+        {/* Household Members */}
+        <div className="mt-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-medium text-stone-600">Household Members</h3>
+            <div className="mt-2 space-y-2">
+              {householdMembers.map((member) => (
+                <div key={member.id} className="flex items-center justify-between rounded-md border border-stone-100 p-3">
+                  <div>
+                    <p className="font-medium">{member.name}</p>
+                    <p className="text-xs text-stone-500">Household</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* External People */}
+          <div className="mt-4">
+            <h3 className="text-sm font-medium text-stone-600">External People</h3>
+            {externalPeople.length === 0 ? (
+              <p className="mt-2 text-sm text-stone-500">No external people yet.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {externalPeople.map((person) => (
+                  <div key={person.id} className="flex items-center justify-between rounded-md border border-stone-100 p-3">
+                    <div>
+                      <p className="font-medium">{person.name}</p>
+                      <p className="text-xs text-stone-500">External</p>
+                    </div>
+                    <button
+                      onClick={() => onArchivePerson(person.id)}
+                      className="focus-ring rounded-md p-1 hover:bg-stone-100"
+                      title="Archive person"
+                    >
+                      <Archive size={16} className="text-stone-500" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <button
+          onClick={() => setShowAddPersonForm(true)}
+          className="focus-ring mt-4 inline-flex items-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-medium hover:bg-stone-50"
+        >
+          <Plus size={16} />
+          Add Person
+        </button>
+      </div>
+
+      {/* Add Person Form */}
+      {showAddPersonForm && (
+        <AddPersonForm
+          onSubmit={async (name, note) => {
+            try {
+              await onAddPerson(name, note);
+              setShowAddPersonForm(false);
+              setError(null);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed to add person");
+            }
+          }}
+          onCancel={() => setShowAddPersonForm(false)}
+        />
+      )}
+
+      {/* Record Settlement */}
+      <div className="rounded-md border border-stone-200 bg-white p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold">Record Settlement</h2>
+            <p className="mt-1 text-sm text-stone-600">Record a payment between people.</p>
+          </div>
+          <button
+            onClick={() => setShowSettlementForm(true)}
+            className="focus-ring rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-medium hover:bg-stone-50"
+          >
+            New Settlement
+          </button>
+        </div>
+      </div>
+
+      {/* Settlement Form */}
+      {showSettlementForm && (
+        <SettlementForm
+          people={allParticipants}
+          onSubmit={async (from, to, amountCents, date, note) => {
+            try {
+              await onRecordSettlement(from, to, amountCents, date, note);
+              setShowSettlementForm(false);
+              setError(null);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed to record settlement");
+            }
+          }}
+          onCancel={() => setShowSettlementForm(false)}
+        />
+      )}
+
+      {/* Settlement History */}
+      <div className="rounded-md border border-stone-200 bg-white p-5">
+        <h2 className="font-semibold">Settlement History</h2>
+        {settlements.length === 0 ? (
+          <p className="mt-3 text-sm text-stone-600">No settlements recorded yet.</p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {settlements.map((settlement) => {
+              const fromName = allParticipants.find((p) => p.id === settlement.fromParticipantId)?.name || "Unknown";
+              const toName = allParticipants.find((p) => p.id === settlement.toParticipantId)?.name || "Unknown";
+
+              return (
+                <div key={settlement.id} className="flex items-start justify-between border-b border-stone-100 py-2 last:border-0">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">
+                      {fromName} paid {toName} {dollars(settlement.amountCents)}
+                    </p>
+                    <p className="text-xs text-stone-500">{settlement.date}</p>
+                    {settlement.notes && <p className="mt-1 text-xs text-stone-600">{settlement.notes}</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AddPersonForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (name: string, note?: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [note, setNote] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    setLoading(true);
+    try {
+      await onSubmit(name.trim(), note.trim() || undefined);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-md border border-stone-200 bg-white p-5">
+      <h3 className="font-semibold">Add External Person</h3>
+      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+        <div>
+          <label className="block text-sm font-medium text-stone-700">Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Person's name"
+            className="focus-ring mt-1 w-full rounded-md border border-stone-300 px-3 py-2"
+            disabled={loading}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-stone-700">Note (optional)</label>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g., office friend, roommate"
+            className="focus-ring mt-1 w-full rounded-md border border-stone-300 px-3 py-2"
+            disabled={loading}
+          />
+        </div>
+        <div className="flex gap-3">
+          <button
+            type="submit"
+            disabled={!name.trim() || loading}
+            className="focus-ring rounded-md border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {loading ? "Adding..." : "Add Person"}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="focus-ring rounded-md border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function SettlementForm({
+  people,
+  onSubmit,
+  onCancel,
+}: {
+  people: Participant[];
+  onSubmit: (from: string, to: string, amountCents: number, date: string, note?: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [fromId, setFromId] = useState("");
+  const [toId, setToId] = useState("");
+  const [amountInput, setAmountInput] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [note, setNote] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Filter out archived people from settlement form
+  const activeParticipants = people.filter(p => !p.archivedAt);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fromId || !toId || fromId === toId || !amountInput.trim()) return;
+
+    const amount = parseInt(amountInput.replace(/[^\d]/g, ""), 10);
+    if (amount <= 0) return;
+
+    setLoading(true);
+    try {
+      await onSubmit(fromId, toId, amount, date, note.trim() || undefined);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-md border border-stone-200 bg-white p-5">
+      <h3 className="font-semibold">Record Settlement</h3>
+      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm font-medium text-stone-700">From</label>
+            <select
+              value={fromId}
+              onChange={(e) => setFromId(e.target.value)}
+              className="focus-ring mt-1 w-full rounded-md border border-stone-300 px-3 py-2"
+              disabled={loading}
+            >
+              <option value="">Select person</option>
+              {activeParticipants.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-stone-700">To</label>
+            <select
+              value={toId}
+              onChange={(e) => setToId(e.target.value)}
+              className="focus-ring mt-1 w-full rounded-md border border-stone-300 px-3 py-2"
+              disabled={loading}
+            >
+              <option value="">Select person</option>
+              {activeParticipants.map((p) => (
+                <option key={p.id} value={p.id} disabled={p.id === fromId}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-stone-700">Amount</label>
+          <input
+            type="text"
+            value={amountInput}
+            onChange={(e) => setAmountInput(e.target.value)}
+            placeholder="$0.00"
+            className="focus-ring mt-1 w-full rounded-md border border-stone-300 px-3 py-2"
+            disabled={loading}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-stone-700">Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="focus-ring mt-1 w-full rounded-md border border-stone-300 px-3 py-2"
+            disabled={loading}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-stone-700">Note (optional)</label>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g., September payment"
+            className="focus-ring mt-1 w-full rounded-md border border-stone-300 px-3 py-2"
+            disabled={loading}
+          />
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            type="submit"
+            disabled={!fromId || !toId || fromId === toId || !amountInput.trim() || loading}
+            className="focus-ring rounded-md border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {loading ? "Recording..." : "Record Settlement"}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="focus-ring rounded-md border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

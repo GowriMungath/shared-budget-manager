@@ -83,6 +83,7 @@ export interface Database {
           name: string;
           kind: "household-member" | "external";
           member_key: string | null;
+          archived_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -92,6 +93,7 @@ export interface Database {
           name: string;
           kind?: "household-member" | "external";
           member_key?: string | null;
+          archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -101,6 +103,7 @@ export interface Database {
           name?: string;
           kind?: "household-member" | "external";
           member_key?: string | null;
+          archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -300,6 +303,7 @@ export interface Database {
           to_participant_id: string;
           cents: number;
           date: string;
+          type: "internal" | "external";
           notes: string | null;
           created_at: string;
           updated_at: string;
@@ -312,6 +316,7 @@ export interface Database {
           to_participant_id: string;
           cents: number;
           date: string;
+          type?: "internal" | "external";
           notes?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -324,6 +329,7 @@ export interface Database {
           to_participant_id?: string;
           cents?: number;
           date?: string;
+          type?: "internal" | "external";
           notes?: string | null;
           created_at?: string;
           updated_at?: string;

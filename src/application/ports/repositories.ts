@@ -20,6 +20,7 @@ export interface HouseholdRepository {
 
 export interface ParticipantRepository {
   listAll(): Promise<Participant[]>;
+  getById(id: ParticipantId): Promise<Participant | undefined>;
   save(participant: Participant): Promise<void>;
 }
 
@@ -63,7 +64,9 @@ export interface SettlementRepository {
   list(): Promise<Settlement[]>;
   listAll(): Promise<Settlement[]>;
   listForParticipant(participantId: ParticipantId): Promise<Settlement[]>;
+  getById(id: Settlement["id"]): Promise<Settlement | undefined>;
   save(settlement: Settlement): Promise<void>;
+  delete(id: Settlement["id"]): Promise<void>;
 }
 
 export interface PaymentMethodRepository {

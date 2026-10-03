@@ -138,27 +138,36 @@ export function calculateExternalReceivables(
     { fromParticipantId: ParticipantId; toParticipantId: ParticipantId; amountCents: number }
   >();
 
+  // Calculate pairwise debt from transactions
+  // Generically: if allocationOwner != payer, then allocationOwner owes payer
+  // Supports household→external, external→household, and external→external
   for (const transaction of transactions) {
     validateTransaction(transaction);
     const payer = participantById.get(transaction.payerParticipantId);
 
-    if (!payer || payer.kind !== "household-member") {
-      continue;
+    if (!payer) {
+      throw new Error(`Unknown payer: ${transaction.payerParticipantId}`);
     }
 
     for (const allocation of transaction.allocations) {
-      const participant = participantById.get(allocation.participantId);
+      const allocationOwner = participantById.get(allocation.participantId);
 
-      if (!participant) {
+      if (!allocationOwner) {
         throw new Error(`Unknown participant: ${allocation.participantId}`);
       }
 
-      if (participant.kind === "external") {
-        addOwed(balances, allocation.participantId, transaction.payerParticipantId, allocation.amountCents);
+      // If allocation owner is different from payer, allocation owner owes payer
+      // This applies regardless of whether payer or owner is household/external
+      if (allocationOwner.id !== payer.id) {
+        // Only track if at least one side is external (internal debts handled separately)
+        if (allocationOwner.kind === "external" || payer.kind === "external") {
+          addOwed(balances, allocationOwner.id, payer.id, allocation.amountCents);
+        }
       }
     }
   }
 
+  // Apply settlements to reduce debt
   for (const settlement of settlements.filter((item) => item.type === "external")) {
     validateSettlement(settlement);
 

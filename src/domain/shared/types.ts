@@ -27,6 +27,7 @@ export interface Participant {
   name: string;
   kind: ParticipantKind;
   memberKey?: MemberKey;
+  archivedAt?: string; // ISO 8601 timestamp; undefined means active
 }
 
 export interface Category {

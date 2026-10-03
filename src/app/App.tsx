@@ -5,6 +5,7 @@ import { createAppServices, type AppServices } from "./appServices.ts";
 import { BudgetsPage } from "../ui/pages/BudgetsPage.tsx";
 import { DashboardPage } from "../ui/pages/DashboardPage.tsx";
 import { TransactionsPage } from "../ui/pages/TransactionsPage.tsx";
+import { PeoplePageContainer } from "../ui/pages/PeoplePageContainer.tsx";
 import { LoginPage } from "../ui/pages/LoginPage.tsx";
 import { AuthProvider, useAuth } from "../ui/auth/AuthContext.tsx";
 import { HouseholdProvider } from "../ui/household/HouseholdContext.tsx";
@@ -193,7 +194,7 @@ function AppContent({ user, services, offline }: { user: { email?: string }, ser
             <Route path="/transactions" element={<TransactionsPage transactionUseCases={services.transactions} />} />
             <Route path="/budgets" element={<BudgetsPage budgetUseCases={services.budgets} />} />
             <Route path="/goals" element={<Placeholder title="Goals" />} />
-            <Route path="/people" element={<Placeholder title="People & Settlements" />} />
+            <Route path="/people" element={<PeoplePageContainer peopleUseCases={services.people} />} />
             <Route path="/reports" element={<Placeholder title="Reports" />} />
             <Route path="/settings" element={<Placeholder title="Settings" />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -48,6 +48,7 @@ export function participantFromRow(row: ParticipantRow): Participant {
     name: row.name,
     kind: row.kind,
     memberKey: row.member_key ?? undefined,
+    archivedAt: row.archived_at ?? undefined,
   };
 }
 
@@ -61,6 +62,7 @@ export function participantToRow(
     name: participant.name,
     kind: participant.kind,
     member_key: participant.memberKey ?? null,
+    archived_at: participant.archivedAt ?? null,
   };
 }
 
@@ -194,7 +196,7 @@ export function settlementFromRow(row: SettlementRow): Settlement {
     toParticipantId: Ids.participantId(row.to_participant_id),
     amountCents: row.cents as Cents,
     date: row.date,
-    type: "internal" as const,
+    type: row.type as "internal" | "external",
     notes: row.notes ?? undefined,
   };
 }
@@ -210,6 +212,7 @@ export function settlementToRow(
     to_participant_id: settlement.toParticipantId,
     cents: settlement.amountCents,
     date: settlement.date,
+    type: settlement.type,
     notes: settlement.notes ?? null,
   };
 }

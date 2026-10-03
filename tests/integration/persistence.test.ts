@@ -348,4 +348,35 @@ describe("IndexedDB persistence", () => {
     await expect(restoreBackup(db, { nope: true })).rejects.toThrow(/Invalid backup format/);
     expect(await repos.transactions.getById(original.id)).toEqual(original);
   });
+
+  test("TEST 13 - settlement soft-delete hides records from queries", async () => {
+    await seedReferenceData();
+    const repos = createRepositories(db);
+    const settlement1 = internalSettlement();
+    const settlement2: Settlement = {
+      id: settlementId("test_settlement_2"),
+      fromParticipantId: gowriId,
+      toParticipantId: nathanielId,
+      amountCents: parseMoney("15.00"),
+      date: "2026-09-21",
+      type: "internal",
+    };
+
+    await repos.settlements.save(settlement1);
+    await repos.settlements.save(settlement2);
+
+    expect(await repos.settlements.listAll()).toEqual([settlement1, settlement2]);
+
+    await repos.settlements.delete(settlement1.id);
+
+    // Repository queries hide deleted record
+    expect(await repos.settlements.listAll()).toEqual([settlement2]);
+    expect(await repos.settlements.getById(settlement1.id)).toBeUndefined();
+
+    // Verify underlying IndexedDB record still exists with deletedAt timestamp
+    const rawDeletedRecord = await db.settlements.get(settlement1.id);
+    expect(rawDeletedRecord).toBeDefined();
+    expect(rawDeletedRecord?.deletedAt).toBeDefined();
+    expect(typeof rawDeletedRecord?.deletedAt).toBe("string");
+  });
 });

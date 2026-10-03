@@ -94,6 +94,22 @@ export class SupabaseParticipantRepository implements ParticipantRepository {
     return (data || []).map(participantFromRow);
   }
 
+  async getById(id: ParticipantId): Promise<Participant | undefined> {
+    const { data, error } = await supabase
+      .from("participants")
+      .select("*")
+      .eq("household_id", this.householdId)
+      .eq("id", id)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      // PGRST116 = no rows found, which is fine
+      throw new Error(`Failed to get participant: ${error.message}`);
+    }
+
+    return data ? participantFromRow(data) : undefined;
+  }
+
   async save(participant: Participant): Promise<void> {
     const row = participantToRow(participant, this.householdId);
     const { error } = await supabase.from("participants").upsert(row);
@@ -318,6 +334,32 @@ export class SupabaseSettlementRepository implements SettlementRepository {
     const row = settlementToRow(settlement, this.householdId);
     const { error } = await supabase.from("settlements").upsert(row);
     if (error) throw new Error(`Failed to save settlement: ${error.message}`);
+  }
+
+  async getById(id: Settlement["id"]): Promise<Settlement | undefined> {
+    const { data, error } = await supabase
+      .from("settlements")
+      .select("*")
+      .eq("household_id", this.householdId)
+      .eq("id", id)
+      .is("deleted_at", null)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      throw new Error(`Failed to get settlement: ${error.message}`);
+    }
+
+    return data ? settlementFromRow(data) : undefined;
+  }
+
+  async delete(id: Settlement["id"]): Promise<void> {
+    const { error } = await supabase
+      .from("settlements")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("household_id", this.householdId);
+
+    if (error) throw new Error(`Failed to delete settlement: ${error.message}`);
   }
 }
 

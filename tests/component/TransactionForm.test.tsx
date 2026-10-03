@@ -33,6 +33,7 @@ const ids: IdService = { createId: () => "component_transaction" };
 function makeUseCases() {
   const participantRepository: ParticipantRepository = {
     listAll: async () => referenceData.participants,
+    getById: async () => undefined,
     save: async (participant) => {
       referenceData = {
         ...referenceData,
@@ -181,5 +182,49 @@ describe("TransactionForm", () => {
     expect(previewPanel).not.toBeNull();
     expect(within(previewPanel!).getAllByText("$0.01").length).toBeGreaterThan(0);
     expect(within(previewPanel!).getAllByText("$0.00").length).toBeGreaterThan(0);
+  });
+
+  test("external participant can be selected as payer", async () => {
+    const user = userEvent.setup();
+    const externalPihu = { id: participantId("test_pihu"), name: "Pihu", kind: "external" as const };
+    referenceData.participants.push(externalPihu);
+    referenceData.externalParticipants.push(externalPihu);
+
+    renderForm();
+
+    const payerSelect = screen.getByLabelText(/Payer/i);
+    await user.selectOptions(payerSelect, externalPihu.id);
+
+    expect(payerSelect).toHaveValue(externalPihu.id);
+  });
+
+  test("external payer transaction creates correct allocations", async () => {
+    const user = userEvent.setup();
+    const externalPihu = { id: participantId("test_pihu_payer"), name: "Pihu", kind: "external" as const };
+    referenceData.participants.push(externalPihu);
+    referenceData.externalParticipants.push(externalPihu);
+
+    const onSubmit = vi.fn();
+    renderForm(onSubmit);
+
+    await user.selectOptions(screen.getByLabelText(/Payer/i), externalPihu.id);
+    await user.type(screen.getByLabelText(/Amount/i), "30");
+    await user.type(screen.getByLabelText(/Description/i), "Pihu pays");
+    await user.click(screen.getByRole("button", { name: /Custom Amount/i }));
+
+    const amountInputs = screen.getAllByLabelText("Allocation amount");
+    await user.clear(amountInputs[0]);
+    await user.type(amountInputs[0], "10");
+    await user.clear(amountInputs[1]);
+    await user.type(amountInputs[1], "10");
+    await user.clear(amountInputs[2]);
+    await user.type(amountInputs[2], "10");
+
+    await user.click(screen.getByRole("button", { name: /Add Transaction/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const draft = onSubmit.mock.calls[0][0];
+    expect(draft.payerParticipantId).toBe(externalPihu.id);
+    expect(draft.totalAmountInput).toBe("30");
   });
 });

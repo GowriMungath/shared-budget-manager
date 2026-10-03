@@ -3,6 +3,7 @@ import { cryptoIdService } from "../application/services/idService.ts";
 import { BudgetUseCases } from "../application/use-cases/budgets/budgetUseCases.ts";
 import { DashboardUseCases } from "../application/use-cases/dashboard/dashboardUseCases.ts";
 import { TransactionUseCases } from "../application/use-cases/transactions/transactionUseCases.ts";
+import { PeopleUseCases } from "../application/use-cases/people/peopleUseCases.ts";
 import { createDatabase, type SharedBudgetManagerDatabase } from "../infrastructure/persistence/indexeddb/database.ts";
 import { createRepositories } from "../infrastructure/persistence/indexeddb/repositories.ts";
 import { initializeDatabase } from "../infrastructure/persistence/indexeddb/seed.ts";
@@ -15,6 +16,7 @@ export interface AppServices {
   transactions: TransactionUseCases;
   budgets: BudgetUseCases;
   dashboard: DashboardUseCases;
+  people: PeopleUseCases;
 }
 
 /**
@@ -52,6 +54,13 @@ export async function createAppServices(user?: User): Promise<AppServices> {
     ids: cryptoIdService,
   });
 
+  const people = new PeopleUseCases({
+    participants: repositories.participants,
+    settlements: repositories.settlements,
+    transactions: repositories.transactions,
+    ids: cryptoIdService,
+  });
+
   return {
     db,
     householdName: "Gowri & Nathaniel", // Local mode uses seeded household name
@@ -66,5 +75,6 @@ export async function createAppServices(user?: User): Promise<AppServices> {
       goals: repositories.goals,
       obligations: repositories.obligations,
     }),
+    people,
   };
 }

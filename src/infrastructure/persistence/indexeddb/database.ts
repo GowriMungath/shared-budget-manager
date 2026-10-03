@@ -14,7 +14,7 @@ import type {
 } from "./schema.ts";
 
 export const DATABASE_NAME = "SharedBudgetManagerDB";
-export const DATABASE_VERSION = 2;
+export const DATABASE_VERSION = 4;
 
 export class SharedBudgetManagerDatabase extends Dexie {
   households!: Table<HouseholdRecord, string>;
@@ -32,7 +32,7 @@ export class SharedBudgetManagerDatabase extends Dexie {
   constructor(name = DATABASE_NAME) {
     super(name);
 
-    this.version(DATABASE_VERSION).stores({
+    this.version(2).stores({
       households: "id",
       participants: "id, kind, memberKey",
       categories: "id, name, archived",
@@ -45,6 +45,46 @@ export class SharedBudgetManagerDatabase extends Dexie {
       goals: "id, ownerParticipantId, deadlineMonth",
       obligations: "id, dueDate, status, ownerParticipantId",
     });
+
+    // Version 3: Add archivedAt to participants for soft-delete support
+    this.version(3)
+      .stores({
+        households: "id",
+        participants: "id, kind, memberKey, archivedAt",
+        categories: "id, name, archived",
+        budgetPeriods: "id, startDate, endDate",
+        budgetLimits: "id, budgetPeriodId, categoryId, scope, ownerParticipantId",
+        transactions: "id, date, categoryId, payerParticipantId, scope",
+        allocations: "id, transactionId, participantId, position",
+        settlements: "id, fromParticipantId, toParticipantId, date",
+        paymentMethods: "id, ownerParticipantId",
+        goals: "id, ownerParticipantId, deadlineMonth",
+        obligations: "id, dueDate, status, ownerParticipantId",
+      })
+      .upgrade(() => {
+        // No data transformation needed - archivedAt is optional, defaults to undefined
+        // All existing participants remain active (archivedAt undefined)
+      });
+
+    // Version 4: Add deletedAt to settlements for soft-delete support
+    this.version(4)
+      .stores({
+        households: "id",
+        participants: "id, kind, memberKey, archivedAt",
+        categories: "id, name, archived",
+        budgetPeriods: "id, startDate, endDate",
+        budgetLimits: "id, budgetPeriodId, categoryId, scope, ownerParticipantId",
+        transactions: "id, date, categoryId, payerParticipantId, scope",
+        allocations: "id, transactionId, participantId, position",
+        settlements: "id, fromParticipantId, toParticipantId, date, deletedAt",
+        paymentMethods: "id, ownerParticipantId",
+        goals: "id, ownerParticipantId, deadlineMonth",
+        obligations: "id, dueDate, status, ownerParticipantId",
+      })
+      .upgrade(() => {
+        // No data transformation needed - deletedAt is optional, defaults to undefined
+        // All existing settlements remain active (deletedAt undefined)
+      });
   }
 }
 

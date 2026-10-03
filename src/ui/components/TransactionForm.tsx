@@ -295,7 +295,7 @@ export function TransactionForm({
               value={draft.payerParticipantId}
               onChange={(event) => update({ payerParticipantId: event.target.value as ParticipantId })}
             >
-              {referenceData.householdMembers.map((participant) => (
+              {participants.map((participant) => (
                 <option key={participant.id} value={participant.id}>
                   {participant.name}
                 </option>

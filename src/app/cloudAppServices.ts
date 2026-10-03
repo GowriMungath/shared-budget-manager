@@ -3,6 +3,7 @@ import { cryptoIdService } from "../application/services/idService.ts";
 import { BudgetUseCases } from "../application/use-cases/budgets/budgetUseCases.ts";
 import { DashboardUseCases } from "../application/use-cases/dashboard/dashboardUseCases.ts";
 import { TransactionUseCases } from "../application/use-cases/transactions/transactionUseCases.ts";
+import { PeopleUseCases } from "../application/use-cases/people/peopleUseCases.ts";
 import { createSupabaseRepositories } from "../infrastructure/supabase/repositories.ts";
 import { householdResolver } from "../application/auth/householdResolver.ts";
 import { householdService } from "../application/auth/householdService.ts";
@@ -42,6 +43,13 @@ export async function createCloudAppServices(user: User): Promise<AppServices> {
     ids: cryptoIdService,
   });
 
+  const people = new PeopleUseCases({
+    participants: repositories.participants,
+    settlements: repositories.settlements,
+    transactions: repositories.transactions,
+    ids: cryptoIdService,
+  });
+
   return {
     db: null, // Cloud mode doesn't use IndexedDB as primary storage
     householdName: household.name,
@@ -56,5 +64,6 @@ export async function createCloudAppServices(user: User): Promise<AppServices> {
       goals: repositories.goals,
       obligations: repositories.obligations,
     }),
+    people,
   };
 }
