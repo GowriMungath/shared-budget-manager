@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import type { Transaction } from "../../domain/ledger/transaction.ts";
 import type { CategoryId, Participant, ParticipantId } from "../../domain/shared/types.ts";
 import { parseMoney, sumCents } from "../../domain/money/money.ts";
 import type {
-  DraftAllocationInput,
   SplitMode,
   TransactionDraft,
   TransactionPreview,
@@ -18,7 +17,6 @@ interface TransactionFormProps {
   preview: (draft: TransactionDraft, existingId?: Transaction["id"]) => Promise<TransactionPreview>;
   onSubmit: (draft: TransactionDraft, existingId?: Transaction["id"]) => Promise<void>;
   onCancel: () => void;
-  onCreateExternalParticipant: (name: string) => Promise<Participant>;
 }
 
 function today(): string {
@@ -71,7 +69,6 @@ export function TransactionForm({
   preview,
   onSubmit,
   onCancel,
-  onCreateExternalParticipant,
 }: TransactionFormProps) {
   const [draft, setDraft] = useState<TransactionDraft>(() =>
     initialTransaction ? draftFromTransaction(initialTransaction) : emptyDraft(referenceData),
@@ -80,17 +77,16 @@ export function TransactionForm({
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [transactionPreview, setTransactionPreview] = useState<TransactionPreview | null>(null);
-  const [newFriendName, setNewFriendName] = useState("");
-  const [inlineParticipants, setInlineParticipants] = useState<Participant[]>([]);
+
+  // Only use active external participants and household members
   const participants = useMemo(
-    () => [
-      ...referenceData.participants,
-      ...inlineParticipants.filter(
-        (inlineParticipant) =>
-          !referenceData.participants.some((participant) => participant.id === inlineParticipant.id),
-      ),
-    ],
-    [inlineParticipants, referenceData.participants],
+    () => referenceData.participants.filter((p) => !p.archivedAt),
+    [referenceData.participants],
+  );
+
+  const allParticipants = useMemo(
+    () => [...participants, ...referenceData.externalParticipants.filter((p) => !p.archivedAt)],
+    [participants, referenceData.externalParticipants],
   );
 
   const categoriesForScope = useMemo(
@@ -174,7 +170,11 @@ export function TransactionForm({
     });
   }
 
-  function addAllocation(participantId: ParticipantId) {
+  function addExternalPerson(participantId: ParticipantId) {
+    // Only add if not already in allocations
+    if (draft.allocations.some((a) => a.participantId === participantId)) {
+      return;
+    }
     setDraft((current) => ({
       ...current,
       allocations: [
@@ -186,28 +186,20 @@ export function TransactionForm({
     }));
   }
 
-  async function addFriend() {
-    const friend = await onCreateExternalParticipant(newFriendName);
-    setInlineParticipants((current) => [...current, friend]);
-    setNewFriendName("");
-    addAllocation(friend.id);
-  }
-
-  function updateAllocation(index: number, partial: Partial<DraftAllocationInput>) {
-    setDraft((current) => ({
-      ...current,
-      allocations: current.allocations.map((allocation, allocationIndex) =>
-        allocationIndex === index ? { ...allocation, ...partial } : allocation,
-      ),
-    }));
-  }
-
   function removeAllocation(index: number) {
     setDraft((current) => ({
       ...current,
       allocations: current.allocations.filter((_, allocationIndex) => allocationIndex !== index),
     }));
   }
+
+  // Get active external participants not already in allocations
+  const availableExternalParticipants = useMemo(() => {
+    const allocatedIds = new Set(draft.allocations.map((a) => a.participantId));
+    return referenceData.externalParticipants.filter(
+      (p) => !p.archivedAt && !allocatedIds.has(p.id),
+    );
+  }, [referenceData.externalParticipants, draft.allocations]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -366,69 +358,131 @@ export function TransactionForm({
               ))}
             </div>
             {draft.splitMode !== "EQUAL_HOUSEHOLD" ? (
-              <div className="mt-4 space-y-2">
-                {draft.allocations.map((allocation, index) => (
-                  <div key={`${allocation.participantId}-${index}`} className="grid grid-cols-[minmax(0,1fr)_104px_42px] gap-2 sm:grid-cols-[minmax(0,1fr)_120px_44px]">
+              <div className="mt-4 space-y-3">
+                {/* Household members - always shown, cannot be removed */}
+                <div>
+                  <p className="mb-2 text-xs font-semibold text-stone-600">Household</p>
+                  {referenceData.householdMembers.map((member) => {
+                    const allocation = draft.allocations.find((a) => a.participantId === member.id);
+                    return (
+                      <div key={member.id} className="mb-2 grid grid-cols-[minmax(0,1fr)_104px] gap-2 sm:grid-cols-[minmax(0,1fr)_120px]">
+                        <div className="flex items-center rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-sm font-medium">
+                          {member.name}
+                        </div>
+                        <input
+                          aria-label={`${member.name} ${draft.splitMode === "CUSTOM_AMOUNT" ? "amount" : "percentage"}`}
+                          className="focus-ring rounded-md border border-stone-300 px-3 py-2"
+                          inputMode="decimal"
+                          value={
+                            draft.splitMode === "CUSTOM_AMOUNT"
+                              ? allocation?.amountInput ?? "0"
+                              : allocation?.percentageInput ?? "0"
+                          }
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            if (allocation) {
+                              const index = draft.allocations.indexOf(allocation);
+                              setDraft((current) => ({
+                                ...current,
+                                allocations: current.allocations.map((a, i) =>
+                                  i === index
+                                    ? draft.splitMode === "CUSTOM_AMOUNT"
+                                      ? { ...a, amountInput: value }
+                                      : { ...a, percentageInput: value }
+                                    : a,
+                                ),
+                              }));
+                            }
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* External people - optional, can be removed */}
+                {draft.allocations
+                  .filter((a) => !referenceData.householdMembers.some((m) => m.id === a.participantId))
+                  .length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold text-stone-600">External People</p>
+                    {draft.allocations
+                      .filter((a) => !referenceData.householdMembers.some((m) => m.id === a.participantId))
+                      .map((allocation, externalIndex) => {
+                        // Look up person from all participants (household + external)
+                        const person = allParticipants.find((p) => p.id === allocation.participantId);
+                        const globalIndex = draft.allocations.indexOf(allocation);
+                        return (
+                          <div
+                            key={`${allocation.participantId}-${externalIndex}`}
+                            className="mb-2 grid grid-cols-[minmax(0,1fr)_104px_42px] gap-2 sm:grid-cols-[minmax(0,1fr)_120px_44px]"
+                          >
+                            <div className="flex items-center rounded-md border border-stone-200 bg-white px-3 py-2 text-sm">
+                              {person?.name ?? "Unknown"}
+                            </div>
+                            <input
+                              aria-label={`${person?.name ?? "Unknown"} ${draft.splitMode === "CUSTOM_AMOUNT" ? "amount" : "percentage"}`}
+                              className="focus-ring rounded-md border border-stone-300 px-3 py-2"
+                              inputMode="decimal"
+                              value={draft.splitMode === "CUSTOM_AMOUNT" ? allocation.amountInput ?? "0" : allocation.percentageInput ?? "0"}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setDraft((current) => ({
+                                  ...current,
+                                  allocations: current.allocations.map((a, i) =>
+                                    i === globalIndex
+                                      ? draft.splitMode === "CUSTOM_AMOUNT"
+                                        ? { ...a, amountInput: value }
+                                        : { ...a, percentageInput: value }
+                                      : a,
+                                  ),
+                                }));
+                              }}
+                            />
+                            <button
+                              type="button"
+                              aria-label={`Remove ${person?.name ?? "person"}`}
+                              className="focus-ring rounded-md border border-stone-300 p-2"
+                              onClick={() => removeAllocation(globalIndex)}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+
+                {/* Add person dropdown */}
+                {availableExternalParticipants.length > 0 ? (
+                  <div>
                     <select
-                      aria-label={`Participant ${index + 1}`}
-                      className="focus-ring rounded-md border border-stone-300 bg-white px-3 py-2"
-                      value={allocation.participantId}
-                      onChange={(event) => updateAllocation(index, { participantId: event.target.value as ParticipantId })}
+                      aria-label="Add external person"
+                      className="focus-ring w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm"
+                      onChange={(event) => {
+                        if (event.target.value) {
+                          addExternalPerson(event.target.value as ParticipantId);
+                          event.target.value = "";
+                        }
+                      }}
+                      value=""
                     >
-                      {participants.map((participant) => (
-                        <option key={participant.id} value={participant.id}>
-                          {participant.name}
+                      <option value="">+ Add person</option>
+                      {availableExternalParticipants.map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.name}
                         </option>
                       ))}
                     </select>
-                    <input
-                      aria-label={draft.splitMode === "CUSTOM_AMOUNT" ? "Allocation amount" : "Allocation percent"}
-                      className="focus-ring rounded-md border border-stone-300 px-3 py-2"
-                      inputMode="decimal"
-                      value={draft.splitMode === "CUSTOM_AMOUNT" ? allocation.amountInput ?? "" : allocation.percentageInput ?? ""}
-                      onChange={(event) =>
-                        updateAllocation(
-                          index,
-                          draft.splitMode === "CUSTOM_AMOUNT"
-                            ? { amountInput: event.target.value }
-                            : { percentageInput: event.target.value },
-                        )
-                      }
-                    />
-                    <button
-                      type="button"
-                      aria-label="Remove allocation"
-                      className="focus-ring rounded-md border border-stone-300 p-2"
-                      onClick={() => removeAllocation(index)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
                   </div>
-                ))}
-                <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
-                  <button
-                    type="button"
-                    className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-stone-300 px-3 py-2 text-sm"
-                    onClick={() => addAllocation(referenceData.householdMembers[0].id)}
-                  >
-                    <Plus size={16} /> Add allocation
-                  </button>
-                  <input
-                    aria-label="New friend name"
-                    className="focus-ring min-h-10 rounded-md border border-stone-300 px-3 py-2 text-sm"
-                    placeholder="Friend name"
-                    value={newFriendName}
-                    onChange={(event) => setNewFriendName(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="focus-ring min-h-10 rounded-md bg-stone-900 px-3 py-2 text-sm text-white disabled:opacity-50"
-                    onClick={addFriend}
-                    disabled={!newFriendName.trim()}
-                  >
-                    Add friend
-                  </button>
-                </div>
+                ) : (
+                  <div className="rounded-md border border-stone-200 bg-stone-50 p-3">
+                    <p className="text-sm text-stone-600">
+                      No external people available. Add people from People & Settlements first.
+                    </p>
+                  </div>
+                )}
+
                 {remainingAmount !== null ? (
                   <p className="text-sm text-stone-700">
                     Allocated: {allocatedAmount !== null ? dollars(allocatedAmount) : "--"} | Remaining to allocate:{" "}

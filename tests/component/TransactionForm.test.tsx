@@ -78,15 +78,14 @@ function renderForm(onSubmit = vi.fn()) {
       preview={(draft, existingId) => useCases.preview(draft, existingId)}
       onSubmit={onSubmit}
       onCancel={vi.fn()}
-      onCreateExternalParticipant={(name) => useCases.createExternalParticipant(name)}
     />,
   );
 }
 
 beforeEach(() => {
   referenceData = {
-    participants,
-    householdMembers: participants,
+    participants: [...participants],  // Create a new array so mutations in tests don't affect others
+    householdMembers: [...participants],
     externalParticipants: [],
     categories: [
       { id: shoppingCategoryId, name: "Shopping", groupName: "Personal", archived: false },
@@ -135,25 +134,32 @@ describe("TransactionForm", () => {
     await user.type(screen.getByLabelText(/Amount/i), "75");
     await user.type(screen.getByLabelText(/Description/i), "Fuel");
     await user.click(screen.getByRole("button", { name: /Custom Amount/i }));
-    const amountInputs = screen.getAllByLabelText("Allocation amount");
-    await user.clear(amountInputs[0]);
-    await user.type(amountInputs[0], "50");
-    await user.clear(amountInputs[1]);
-    await user.type(amountInputs[1], "20");
+    
+    // Household members are now fixed label rows with aria-labels like "Gowri amount", "Nathaniel amount"
+    const gowriAmountInput = screen.getByLabelText("Gowri amount");
+    const nathanielAmountInput = screen.getByLabelText("Nathaniel amount");
+    
+    await user.clear(gowriAmountInput);
+    await user.type(gowriAmountInput, "50");
+    await user.clear(nathanielAmountInput);
+    await user.type(nathanielAmountInput, "20");
 
     expect(await screen.findByText(/Allocations must equal/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Add Transaction/i })).toBeDisabled();
   });
 
-  test("external participant can be added inline", async () => {
+  test("external participant removed - no inline creation", async () => {
     const user = userEvent.setup();
     renderForm();
 
     await user.click(screen.getByRole("button", { name: /Custom Amount/i }));
-    await user.type(screen.getByLabelText(/New friend name/i), "Rohit");
-    await user.click(screen.getByRole("button", { name: /^Add friend$/i }));
-
-    await waitFor(() => expect(referenceData.externalParticipants[0]?.name).toBe("Rohit"));
+    
+    // The "New friend name" input and "Add friend" button should NOT exist
+    expect(screen.queryByLabelText(/New friend name/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Add friend$/i })).not.toBeInTheDocument();
+    
+    // Instead, there should be a "No external people available" message
+    expect(screen.getByText(/No external people available/i)).toBeInTheDocument();
   });
 
   test("invalid amount shows validation and blocks submit", async () => {
@@ -174,11 +180,15 @@ describe("TransactionForm", () => {
     await user.type(screen.getByLabelText(/Amount/i), "0.01");
     await user.type(screen.getByLabelText(/Description/i), "Tiny split");
     await user.click(screen.getByRole("button", { name: /Custom %/i }));
-    const percentInputs = screen.getAllByLabelText("Allocation percent");
-    await user.clear(percentInputs[0]);
-    await user.type(percentInputs[0], "50");
-    await user.clear(percentInputs[1]);
-    await user.type(percentInputs[1], "50");
+    
+    // Household members now have aria-labels like "Gowri percentage", "Nathaniel percentage"
+    const gowriPercentInput = screen.getByLabelText("Gowri percentage");
+    const nathanielPercentInput = screen.getByLabelText("Nathaniel percentage");
+    
+    await user.clear(gowriPercentInput);
+    await user.type(gowriPercentInput, "50");
+    await user.clear(nathanielPercentInput);
+    await user.type(nathanielPercentInput, "50");
 
     const preview = await screen.findByText("Preview");
     const previewPanel = preview.closest("aside");
@@ -203,31 +213,62 @@ describe("TransactionForm", () => {
 
   test("external payer transaction creates correct allocations", async () => {
     const user = userEvent.setup();
-    const externalPihu = { id: participantId("test_pihu_payer"), name: "Pihu", kind: "external" as const };
+    // Set up an active external participant (Pihu) for testing external payer
+    const externalPihu = { id: participantId("component_pihu"), name: "Pihu", kind: "external" as const };
+    
+    // Use direct mutation like the "can be selected as payer" test, since it's before render
     referenceData.participants.push(externalPihu);
     referenceData.externalParticipants.push(externalPihu);
-
+    
     const onSubmit = vi.fn();
     renderForm(onSubmit);
 
+    // Select Pihu as payer
     await user.selectOptions(screen.getByLabelText(/Payer/i), externalPihu.id);
     await user.type(screen.getByLabelText(/Amount/i), "30");
     await user.type(screen.getByLabelText(/Description/i), "Pihu pays");
+    
+    // Switch to custom amount split
     await user.click(screen.getByRole("button", { name: /Custom Amount/i }));
 
-    const amountInputs = screen.getAllByLabelText("Allocation amount");
-    await user.clear(amountInputs[0]);
-    await user.type(amountInputs[0], "10");
-    await user.clear(amountInputs[1]);
-    await user.type(amountInputs[1], "10");
-    await user.clear(amountInputs[2]);
-    await user.type(amountInputs[2], "10");
+    // Wait for custom split to render
+    await waitFor(() => expect(screen.getByLabelText("Gowri amount")).toBeInTheDocument());
+    
+    // Get household member inputs (fixed rows that cannot be removed)
+    const gowriInput = screen.getByLabelText("Gowri amount");
+    const nathanielInput = screen.getByLabelText("Nathaniel amount");
+    
+    // Set household member amounts
+    await user.clear(gowriInput);
+    await user.type(gowriInput, "10");
+    await user.clear(nathanielInput);
+    await user.type(nathanielInput, "10");
+    
+    // Add Pihu to the custom split using the + Add person dropdown
+    // Wait for the select to appear
+    await waitFor(() => screen.getByLabelText("Add external person"));
+    const addPersonSelect = screen.getByLabelText("Add external person");
+    await user.selectOptions(addPersonSelect, externalPihu.id);
+    
+    // Wait for Pihu's allocation row to appear
+    await waitFor(() => expect(screen.getByLabelText("Pihu amount")).toBeInTheDocument());
+    
+    // Set Pihu's amount
+    const pihuInput = screen.getByLabelText("Pihu amount");
+    await user.clear(pihuInput);
+    await user.type(pihuInput, "10");
 
+    // Submit the form
     await user.click(screen.getByRole("button", { name: /Add Transaction/i }));
 
+    // Verify submission
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     const draft = onSubmit.mock.calls[0][0];
     expect(draft.payerParticipantId).toBe(externalPihu.id);
     expect(draft.totalAmountInput).toBe("30");
+    expect(draft.allocations).toHaveLength(3);
+    expect(draft.allocations.map((a) => a.participantId).sort()).toEqual(
+      [gowriId, nathanielId, externalPihu.id].sort()
+    );
   });
 });

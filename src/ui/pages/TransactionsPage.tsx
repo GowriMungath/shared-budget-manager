@@ -45,8 +45,10 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
     setError(null);
 
     try {
+      // Use getReferenceDataWithArchivedParticipants for rendering historical transactions
+      // This ensures archived payers and allocation owners can be resolved
       const [nextReferenceData, nextTransactions] = await Promise.all([
-        transactionUseCases.getReferenceData(),
+        transactionUseCases.getReferenceDataWithArchivedParticipants(),
         transactionUseCases.listTransactions(),
       ]);
       setReferenceData(nextReferenceData);
@@ -307,19 +309,6 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
               referenceData={referenceData}
               initialTransaction={editing}
               preview={(draft, existingId) => transactionUseCases.preview(draft, existingId)}
-              onCreateExternalParticipant={async (name) => {
-                const participant = await transactionUseCases.createExternalParticipant(name);
-                setReferenceData((current) =>
-                  current
-                    ? {
-                        ...current,
-                        participants: [...current.participants, participant],
-                        externalParticipants: [...current.externalParticipants, participant],
-                      }
-                    : current,
-                );
-                return participant;
-              }}
               onSubmit={async (draft, existingId) => {
                 if (existingId) {
                   await transactionUseCases.updateTransaction(existingId, draft);

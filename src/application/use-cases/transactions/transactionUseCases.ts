@@ -97,6 +97,30 @@ export class TransactionUseCases {
     };
   }
 
+  /**
+   * Get reference data with all participants including archived (for historical rendering)
+   * Use this when rendering existing transactions where payers/allocations might be archived
+   */
+  async getReferenceDataWithArchivedParticipants(): Promise<TransactionReferenceData> {
+    const [allParticipants, categories, paymentMethods] = await Promise.all([
+      this.dependencies.participants.listAll(),
+      this.dependencies.categories.listAll(),
+      this.dependencies.paymentMethods.listAll(),
+    ]);
+    
+    // Use all participants (including archived) for historical rendering
+    const householdMembers = allParticipants.filter((participant) => participant.kind === "household-member");
+    const externalParticipants = allParticipants.filter((participant) => participant.kind === "external");
+
+    return {
+      participants: allParticipants,
+      householdMembers,
+      externalParticipants,
+      categories,
+      paymentMethods,
+    };
+  }
+
   async createExternalParticipant(name: string): Promise<Participant> {
     const trimmedName = name.trim();
 
@@ -237,9 +261,10 @@ export class TransactionUseCases {
   }
 
   async listTransactions(): Promise<TransactionListItem[]> {
-    const [transactions, referenceData] = await Promise.all([
+    const [transactions, referenceData, allParticipants] = await Promise.all([
       this.dependencies.transactions.listAll(),
       this.getReferenceData(),
+      this.dependencies.participants.listAll(), // Include archived for historical rendering
     ]);
 
     return transactions
@@ -248,7 +273,7 @@ export class TransactionUseCases {
       .map((transaction) => ({
         transaction,
         category: referenceData.categories.find((category) => category.id === transaction.categoryId),
-        payer: referenceData.participants.find((participant) => participant.id === transaction.payerParticipantId),
+        payer: allParticipants.find((participant) => participant.id === transaction.payerParticipantId),
       }));
   }
 }
