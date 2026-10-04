@@ -6,8 +6,10 @@ import type { Participant } from "../../src/domain/shared/types.ts";
 import type { IdService } from "../../src/application/services/idService.ts";
 import { PeopleUseCases } from "../../src/application/use-cases/people/peopleUseCases.ts";
 import { TransactionUseCases } from "../../src/application/use-cases/transactions/transactionUseCases.ts";
+import { calculateHouseholdBalance } from "../../src/application/use-cases/balances/balanceUseCases.ts";
 import { createDatabase, type SharedBudgetManagerDatabase } from "../../src/infrastructure/persistence/indexeddb/database.ts";
 import { createRepositories } from "../../src/infrastructure/persistence/indexeddb/repositories.ts";
+import { initializeDatabase } from "../../src/infrastructure/persistence/indexeddb/seed.ts";
 import type { Settlement } from "../../src/domain/settlement/settlement.ts";
 
 let db: SharedBudgetManagerDatabase;
@@ -283,5 +285,193 @@ describe("Archived People Management", () => {
 
     // Test Friend should NOT be in externalParticipants
     expect(refData.externalParticipants.every((p) => p.id !== testFriendId)).toBe(true);
+  });
+});
+
+
+describe("Regression: Archived participants in historical calculations", () => {
+  let db: SharedBudgetManagerDatabase;
+  let peopleUseCases: PeopleUseCases;
+  let transactionUseCases: TransactionUseCases;
+  let idCounter = 0;
+
+  const gowriId = participantId("regr_gowri");
+  const nathanielId = participantId("regr_nathaniel");
+  const archiveTestFriendId = participantId("regr_archive_friend");
+  const groceriesId = categoryId("regr_groceries");
+
+  const participants: Participant[] = [
+    { id: gowriId, name: "Gowri", kind: "household-member", memberKey: "gowri" },
+    { id: nathanielId, name: "Nathaniel", kind: "household-member", memberKey: "nathaniel" },
+    { id: archiveTestFriendId, name: "Archive Test Friend", kind: "external" },
+  ];
+
+  const ids: IdService = {
+    createId: () => `regr_generated_${++idCounter}`,
+  };
+
+  beforeEach(async () => {
+    db = await createDatabase();
+    const repos = createRepositories(db);
+
+    peopleUseCases = new PeopleUseCases({
+      participants: repos.participants,
+      settlements: repos.settlements,
+      transactions: repos.transactions,
+      ids,
+    });
+
+    transactionUseCases = new TransactionUseCases({
+      transactions: repos.transactions,
+      participants: repos.participants,
+      categories: repos.categories,
+      paymentMethods: repos.paymentMethods,
+      ids,
+    });
+
+    // Initialize database
+    await initializeDatabase(db);
+
+    // Create participants
+    for (const p of participants) {
+      await repos.participants.save(p);
+    }
+  });
+
+  afterEach(async () => {
+    db.close();
+  });
+
+  test("Archived payer in existing transaction does not crash balance calculation", async () => {
+    // 1. Create a transaction with Test Friend as payer
+    await transactionUseCases.createTransaction({
+      date: "2026-09-20",
+      description: "Dinner with archived friend",
+      payerParticipantId: archiveTestFriendId,
+      totalAmountInput: "90.00",
+      categoryId: groceriesId,
+      scope: "shared",
+      splitMode: "CUSTOM_AMOUNT",
+      allocations: [
+        { participantId: gowriId, amountInput: "30.00" },
+        { participantId: nathanielId, amountInput: "30.00" },
+        { participantId: archiveTestFriendId, amountInput: "30.00" },
+      ],
+    });
+
+    // 2. Archive the payer
+    await peopleUseCases.archiveParticipant(archiveTestFriendId);
+
+    // 3. Calculate household balance (should NOT crash with "Unknown payer")
+    const balance = await peopleUseCases.getHouseholdBalance([gowriId, nathanielId]);
+
+    // 4. Verify the calculation succeeded and shows external receivables
+    expect(balance.external.length).toBeGreaterThan(0);
+    expect(balance.external.some((r) => r.fromParticipantId === gowriId || r.fromParticipantId === nathanielId)).toBe(
+      true
+    );
+  });
+
+  test("Archived allocation owner in existing transaction does not crash", async () => {
+    // 1. Create a transaction where Test Friend is in allocations
+    await transactionUseCases.createTransaction({
+      date: "2026-09-20",
+      description: "Shared dinner",
+      payerParticipantId: gowriId,
+      totalAmountInput: "90.00",
+      categoryId: groceriesId,
+      scope: "shared",
+      splitMode: "CUSTOM_AMOUNT",
+      allocations: [
+        { participantId: gowriId, amountInput: "30.00" },
+        { participantId: nathanielId, amountInput: "30.00" },
+        { participantId: archiveTestFriendId, amountInput: "30.00" },
+      ],
+    });
+
+    // 2. Archive the allocation owner
+    await peopleUseCases.archiveParticipant(archiveTestFriendId);
+
+    // 3. Calculate household balance (should NOT crash with "Unknown participant")
+    const balance = await peopleUseCases.getHouseholdBalance([gowriId, nathanielId]);
+
+    // 4. Verify the calculation succeeded
+    expect(balance).toBeDefined();
+    expect(balance.external.length).toBeGreaterThan(0);
+    const fromArchivedFriend = balance.external.find((r) => r.toParticipantId === gowriId);
+    expect(fromArchivedFriend).toBeDefined();
+    expect(fromArchivedFriend?.amountCents).toBe(parseMoney("30.00"));
+  });
+
+  test("Settlement with archived participant does not crash calculations", async () => {
+    // 1. Create initial transaction where Gowri pays for archived friend
+    await transactionUseCases.createTransaction({
+      date: "2026-09-20",
+      description: "Coffee",
+      payerParticipantId: gowriId,
+      totalAmountInput: "20.00",
+      categoryId: groceriesId,
+      scope: "shared",
+      splitMode: "CUSTOM_AMOUNT",
+      allocations: [
+        { participantId: archiveTestFriendId, amountInput: "20.00" },
+      ],
+    });
+
+    // 2. Create settlement: archived friend pays back Gowri
+    await peopleUseCases.createSettlement({
+      fromParticipantId: archiveTestFriendId,
+      toParticipantId: gowriId,
+      amountCents: parseMoney("20.00"),
+      date: "2026-09-21",
+    });
+
+    // 3. Archive the friend
+    await peopleUseCases.archiveParticipant(archiveTestFriendId);
+
+    // 4. Calculate balance (should NOT crash with "Unknown participant")
+    // This verifies the archived participant can be looked up when processing settlements
+    const balance = await peopleUseCases.getHouseholdBalance([gowriId, nathanielId]);
+
+    // 5. Verify the calculation succeeded (main point: no crash with archived participant)
+    expect(balance).toBeDefined();
+    // The key is that we can compute balance with archived participants involved
+  });
+
+  test("Dashboard can render with archived payer in transactions", async () => {
+    // 1. Create transaction with archived friend as payer
+    await transactionUseCases.createTransaction({
+      date: "2026-09-20",
+      description: "Lunch",
+      payerParticipantId: archiveTestFriendId,
+      totalAmountInput: "45.00",
+      categoryId: groceriesId,
+      scope: "shared",
+      splitMode: "CUSTOM_AMOUNT",
+      allocations: [
+        { participantId: gowriId, amountInput: "45.00" },
+      ],
+    });
+
+    // 2. Archive the payer
+    await peopleUseCases.archiveParticipant(archiveTestFriendId);
+
+    // 3. Get all participants and transactions (simulating dashboard data load)
+    const allParticipants = await peopleUseCases.listAllParticipants();
+    const allTransactions = await peopleUseCases.listAllTransactions();
+    const allSettlements = await peopleUseCases.listSettlements();
+
+    // 4. Calculate external receivables like dashboard does
+    const { external } = calculateHouseholdBalance(
+      [gowriId, nathanielId],
+      allTransactions,
+      allSettlements,
+      allParticipants
+    );
+
+    // 5. Verify archived participant can be resolved
+    expect(external.length).toBeGreaterThan(0);
+    const receivable = external.find((r) => r.toParticipantId === gowriId);
+    expect(receivable?.fromParticipantId).toBe(archiveTestFriendId);
   });
 });

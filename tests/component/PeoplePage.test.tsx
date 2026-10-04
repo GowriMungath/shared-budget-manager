@@ -48,6 +48,7 @@ describe("PeoplePage", () => {
         householdMembers={householdMembers}
         externalPeople={externalPeople}
         archivedExternalPeople={[]}
+        allParticipants={participants}
         transactions={[transaction]}
         settlements={[]}
         onAddPerson={async () => undefined}
@@ -75,6 +76,7 @@ describe("PeoplePage", () => {
         householdMembers={householdMembers}
         externalPeople={externalPeople}
         archivedExternalPeople={[]}
+        allParticipants={participants}
         transactions={[]}
         settlements={[]}
         onAddPerson={async () => undefined}
@@ -114,6 +116,7 @@ describe("PeoplePage", () => {
         householdMembers={householdMembers}
         externalPeople={[]}
         archivedExternalPeople={[]}
+        allParticipants={householdMembers}
         transactions={[transaction]}
         settlements={[]}
         onAddPerson={async () => undefined}
@@ -150,6 +153,7 @@ describe("PeoplePage", () => {
         householdMembers={householdMembers}
         externalPeople={[]}
         archivedExternalPeople={[]}
+        allParticipants={householdMembers}
         transactions={[]}
         settlements={[settlement]}
         onAddPerson={async () => undefined}
@@ -199,6 +203,7 @@ describe("PeoplePage", () => {
         householdMembers={householdMembers}
         externalPeople={[]}
         archivedExternalPeople={[]}
+        allParticipants={householdMembers}
         transactions={[]}
         settlements={[settlement]}
         onAddPerson={async () => undefined}

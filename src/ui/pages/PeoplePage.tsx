@@ -10,6 +10,7 @@ interface PeoplePageProps {
   householdMembers: Participant[];
   externalPeople: Participant[];
   archivedExternalPeople: Participant[];
+  allParticipants: Participant[]; // All participants including archived (for historical lookups)
   transactions: Transaction[];
   settlements: Settlement[];
   onAddPerson: (name: string, note?: string) => Promise<void>;
@@ -24,6 +25,7 @@ export function PeoplePage({
   householdMembers,
   externalPeople,
   archivedExternalPeople,
+  allParticipants,
   transactions,
   settlements,
   onAddPerson,
@@ -40,7 +42,8 @@ export function PeoplePage({
   const [deletingSettlementId, setDeletingSettlementId] = useState<string | null>(null);
   const [deletingPersonId, setDeletingPersonId] = useState<string | null>(null);
 
-  const allParticipants = [...householdMembers, ...externalPeople];
+  // Use allParticipants (including archived) for balance calculations
+  // This ensures archived participants are resolvable for historical transactions
 
   const householdBalance = useMemo(() => {
     const memberIds = householdMembers.map((m) => m.id);

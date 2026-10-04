@@ -128,13 +128,18 @@ export class SupabaseParticipantRepository implements ParticipantRepository {
   }
 
   async delete(id: ParticipantId): Promise<void> {
+    // SAFETY: This should ONLY be called after reference checks pass
+    // Never call this directly without first verifying via hasParticipantReference()
     const { error } = await supabase
       .from("participants")
       .delete()
       .eq("id", id)
       .eq("household_id", this.householdId);
 
-    if (error) throw new Error(`Failed to delete participant: ${error.message}`);
+    if (error) {
+      // FAIL-CLOSED: If delete fails (including due to FK constraints), throw
+      throw new Error(`Failed to delete participant: ${error.message}`);
+    }
   }
 }
 
@@ -321,7 +326,9 @@ export class SupabaseTransactionRepository implements TransactionRepository {
   }
 
   async hasParticipantReference(participantId: ParticipantId): Promise<boolean> {
-    // Check if participant is a payer
+    // FAIL-CLOSED: If any check errors or is uncertain, return true (block deletion)
+
+    // Check 1: Is participant a payer in any transaction?
     const { count: payerCount, error: payerError } = await supabase
       .from("transactions")
       .select("*", { count: "exact", head: true })
@@ -329,20 +336,69 @@ export class SupabaseTransactionRepository implements TransactionRepository {
       .eq("payer_participant_id", participantId)
       .is("deleted_at", null);
 
-    if (payerError) throw new Error(`Failed to check transaction references: ${payerError.message}`);
+    if (payerError) {
+      throw new Error(
+        `FAIL-CLOSED: Cannot verify payer references - blocking deletion. ${payerError.message}`
+      );
+    }
     if (payerCount && payerCount > 0) {
       return true;
     }
 
-    // Check if participant is in any allocation
+    // Check 2: Is participant in any allocation?
+    // CRITICAL: Must filter by household_id to avoid cross-household queries
     const { count: allocationCount, error: allocError } = await supabase
       .from("allocations")
       .select("*", { count: "exact", head: true })
+      .eq("household_id", this.householdId)
       .eq("participant_id", participantId)
       .is("deleted_at", null);
 
-    if (allocError) throw new Error(`Failed to check allocation references: ${allocError.message}`);
-    return allocationCount ? allocationCount > 0 : false;
+    if (allocError) {
+      throw new Error(
+        `FAIL-CLOSED: Cannot verify allocation references - blocking deletion. ${allocError.message}`
+      );
+    }
+    if (allocationCount && allocationCount > 0) {
+      return true;
+    }
+
+    // Check 3: Is participant a from_participant in any settlement?
+    const { count: fromSettlementCount, error: fromSettlementError } = await supabase
+      .from("settlements")
+      .select("*", { count: "exact", head: true })
+      .eq("household_id", this.householdId)
+      .eq("from_participant_id", participantId)
+      .is("deleted_at", null);
+
+    if (fromSettlementError) {
+      throw new Error(
+        `FAIL-CLOSED: Cannot verify from_participant settlement references - blocking deletion. ${fromSettlementError.message}`
+      );
+    }
+    if (fromSettlementCount && fromSettlementCount > 0) {
+      return true;
+    }
+
+    // Check 4: Is participant a to_participant in any settlement?
+    const { count: toSettlementCount, error: toSettlementError } = await supabase
+      .from("settlements")
+      .select("*", { count: "exact", head: true })
+      .eq("household_id", this.householdId)
+      .eq("to_participant_id", participantId)
+      .is("deleted_at", null);
+
+    if (toSettlementError) {
+      throw new Error(
+        `FAIL-CLOSED: Cannot verify to_participant settlement references - blocking deletion. ${toSettlementError.message}`
+      );
+    }
+    if (toSettlementCount && toSettlementCount > 0) {
+      return true;
+    }
+
+    // All checks passed - no references found
+    return false;
   }
 }
 

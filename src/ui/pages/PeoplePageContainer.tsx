@@ -14,6 +14,7 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
   const [householdMembers, setHouseholdMembers] = useState<Participant[]>([]);
   const [externalPeople, setExternalPeople] = useState<Participant[]>([]);
   const [archivedExternalPeople, setArchivedExternalPeople] = useState<Participant[]>([]);
+  const [allParticipants, setAllParticipants] = useState<Participant[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,7 +24,7 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
     try {
       setError(null);
       setLoading(true);
-      const [members, external, settlements_, allTransactions, allParticipants] = await Promise.all([
+      const [members, external, settlements_, allTransactions, allParticipantsData] = await Promise.all([
         peopleUseCases.listHouseholdMembers(),
         peopleUseCases.listActiveExternalPeople(),
         peopleUseCases.listSettlements(),
@@ -34,8 +35,9 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
       setExternalPeople(external);
       setTransactions(allTransactions);
       setSettlements(settlements_);
+      setAllParticipants(allParticipantsData);
       // Filter archived external people (not household members)
-      const archived = allParticipants.filter(
+      const archived = allParticipantsData.filter(
         (p) => p.archivedAt && p.kind === "external"
       );
       setArchivedExternalPeople(archived);
@@ -125,6 +127,7 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
       householdMembers={householdMembers}
       externalPeople={externalPeople}
       archivedExternalPeople={archivedExternalPeople}
+      allParticipants={allParticipants}
       transactions={transactions}
       settlements={settlements}
       onAddPerson={handleAddPerson}
