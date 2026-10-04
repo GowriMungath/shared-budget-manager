@@ -267,7 +267,11 @@ describe("TransactionForm", () => {
     expect(draft.payerParticipantId).toBe(externalPihu.id);
     expect(draft.totalAmountInput).toBe("30");
     expect(draft.allocations).toHaveLength(3);
-    expect(draft.allocations.map((a) => a.participantId).sort()).toEqual(
+    expect(
+      draft.allocations.map(
+        (a: { participantId: string }) => a.participantId
+      ).sort()
+    ).toEqual(
       [gowriId, nathanielId, externalPihu.id].sort()
     );
   });
