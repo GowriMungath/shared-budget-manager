@@ -76,6 +76,14 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
     [peopleUseCases, loadData]
   );
 
+  const handleRenamePerson = useCallback(
+    async (participantId: ParticipantId, newName: string) => {
+      await peopleUseCases.renameParticipant(participantId, newName);
+      await loadData();
+    },
+    [peopleUseCases, loadData]
+  );
+
   const handleRecordSettlement = useCallback(
     async (from: string, to: string, amountCents: number, date: string, note?: string) => {
       await peopleUseCases.createSettlement({
@@ -93,14 +101,6 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
   const handleDeleteSettlement = useCallback(
     async (settlementId: string) => {
       await peopleUseCases.deleteSettlement(settlementId);
-      await loadData();
-    },
-    [peopleUseCases, loadData]
-  );
-
-  const handlePermanentlyDeletePerson = useCallback(
-    async (participantId: string) => {
-      await peopleUseCases.permanentlyDeleteParticipant(participantId as ParticipantId);
       await loadData();
     },
     [peopleUseCases, loadData]
@@ -133,9 +133,9 @@ export function PeoplePageContainer({ peopleUseCases }: PeoplePageContainerProps
       onAddPerson={handleAddPerson}
       onArchivePerson={handleArchivePerson}
       onUnarchivePerson={handleUnarchivePerson}
+      onRenamePerson={handleRenamePerson}
       onRecordSettlement={handleRecordSettlement}
       onDeleteSettlement={handleDeleteSettlement}
-      onPermanentlyDeletePerson={handlePermanentlyDeletePerson}
     />
   );
 }

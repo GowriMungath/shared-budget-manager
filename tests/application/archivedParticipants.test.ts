@@ -475,3 +475,245 @@ describe("Regression: Archived participants in historical calculations", () => {
     expect(receivable?.fromParticipantId).toBe(archiveTestFriendId);
   });
 });
+
+describe("Rename Participant Functionality", () => {
+  test("Renaming external participant updates the participant UUID without creating new one", async () => {
+    const repos = createRepositories(db);
+
+    // Rename Test Friend
+    const renamed = await peopleUseCases.renameParticipant(testFriendId, "Renamed Friend");
+
+    // Same UUID
+    expect(renamed.id).toBe(testFriendId);
+
+    // Name updated
+    expect(renamed.name).toBe("Renamed Friend");
+
+    // Verify in database
+    const fromDb = await repos.participants.getById(testFriendId);
+    expect(fromDb?.name).toBe("Renamed Friend");
+  });
+
+  test("Renaming preserves archived status", async () => {
+    // Archive Test Friend first
+    await peopleUseCases.archiveParticipant(testFriendId);
+
+    // Rename the archived person
+    const renamed = await peopleUseCases.renameParticipant(testFriendId, "Renamed Archived Friend");
+
+    // Should still be archived
+    expect(renamed.archivedAt).toBeDefined();
+
+    // Name updated
+    expect(renamed.name).toBe("Renamed Archived Friend");
+  });
+
+  test("Renaming does not restore archived participant", async () => {
+    // Archive Test Friend
+    await peopleUseCases.archiveParticipant(testFriendId);
+
+    // Verify archived
+    let archived = await peopleUseCases.listActiveExternalPeople();
+    expect(archived.some((p) => p.id === testFriendId)).toBe(false);
+
+    // Rename the archived person
+    await peopleUseCases.renameParticipant(testFriendId, "New Name");
+
+    // Should still not be in active list
+    archived = await peopleUseCases.listActiveExternalPeople();
+    expect(archived.some((p) => p.id === testFriendId)).toBe(false);
+  });
+
+  test("Historical transaction resolves renamed participant by UUID", async () => {
+    const repos = createRepositories(db);
+    const renamedTestFriendId = participantId("regr_rename_txn_friend");
+    const renamedGowriId = participantId("regr_rename_txn_gowri");
+    const renameGroceriesId = categoryId("regr_rename_txn_groceries");
+
+    // Set up fresh participants
+    const participants2: Participant[] = [
+      { id: renamedGowriId, name: "Gowri2", kind: "household-member", memberKey: "gowri2" },
+      { id: renamedTestFriendId, name: "Test Friend 2", kind: "external" },
+    ];
+
+    for (const p of participants2) {
+      await repos.participants.save(p);
+    }
+
+    const cat2 = { id: renameGroceriesId, name: "Groceries2", archived: false, groupName: "Essentials" };
+    await repos.categories.save(cat2);
+
+    // 1. Create transaction with Test Friend as payer
+    await transactionUseCases.createTransaction({
+      date: "2026-09-20",
+      description: "Original name transaction",
+      payerParticipantId: renamedTestFriendId,
+      totalAmountInput: "50.00",
+      categoryId: renameGroceriesId,
+      scope: "shared",
+      splitMode: "CUSTOM_AMOUNT",
+      allocations: [
+        { participantId: renamedGowriId, amountInput: "50.00" },
+      ],
+    });
+
+    // 2. Rename Test Friend
+    await peopleUseCases.renameParticipant(renamedTestFriendId, "Pihu");
+
+    // 3. Load all participants for historical rendering
+    const allParticipants = await peopleUseCases.listAllParticipants();
+    const allTransactions = await peopleUseCases.listAllTransactions();
+
+    // 4. Find the transaction we created (filter to our specific transaction)
+    const ourTxn = allTransactions.find((t) => t.description === "Original name transaction");
+
+    // 5. Verify transaction still references the renamed participant by UUID
+    expect(ourTxn).toBeDefined();
+    expect(ourTxn?.payerParticipantId).toBe(renamedTestFriendId);
+
+    // 6. When rendering, we should resolve by UUID and get the new name
+    const payer = allParticipants.find((p) => p.id === ourTxn?.payerParticipantId);
+    expect(payer?.name).toBe("Pihu");
+  });
+
+  test("Historical allocation resolves renamed participant by UUID", async () => {
+    const repos = createRepositories(db);
+    const renamedTestFriendId = participantId("regr_rename_alloc_friend");
+    const renamedGowriId = participantId("regr_rename_alloc_gowri");
+    const renameGroceriesId = categoryId("regr_rename_alloc_groceries");
+
+    // Set up fresh participants
+    const participants2: Participant[] = [
+      { id: renamedGowriId, name: "Gowri3", kind: "household-member", memberKey: "gowri3" },
+      { id: renamedTestFriendId, name: "Test Friend 3", kind: "external" },
+    ];
+
+    for (const p of participants2) {
+      await repos.participants.save(p);
+    }
+
+    const cat2 = { id: renameGroceriesId, name: "Groceries3", archived: false, groupName: "Essentials" };
+    await repos.categories.save(cat2);
+
+    // 1. Create transaction with Test Friend in allocations
+    await transactionUseCases.createTransaction({
+      date: "2026-09-20",
+      description: "Transaction with external renamed",
+      payerParticipantId: renamedGowriId,
+      totalAmountInput: "50.00",
+      categoryId: renameGroceriesId,
+      scope: "shared",
+      splitMode: "CUSTOM_AMOUNT",
+      allocations: [
+        { participantId: renamedTestFriendId, amountInput: "50.00" },
+      ],
+    });
+
+    // 2. Rename Test Friend
+    await peopleUseCases.renameParticipant(renamedTestFriendId, "Pihu");
+
+    // 3. Load historical data
+    const allParticipants = await peopleUseCases.listAllParticipants();
+    const allTransactions = await peopleUseCases.listAllTransactions();
+
+    // 4. Find our specific transaction
+    const ourTxn = allTransactions.find((t) => t.description === "Transaction with external renamed");
+
+    // 5. Verify allocation still references the renamed participant by UUID
+    expect(ourTxn?.allocations[0].participantId).toBe(renamedTestFriendId);
+
+    // 6. When rendering, we get the new name
+    const participant = allParticipants.find((p) => p.id === ourTxn?.allocations[0].participantId);
+    expect(participant?.name).toBe("Pihu");
+  });
+
+  test("Settlement history resolves renamed participant by UUID", async () => {
+    // 1. Create settlement with Test Friend
+    await peopleUseCases.createSettlement({
+      fromParticipantId: testFriendId,
+      toParticipantId: gowriId,
+      amountCents: parseMoney("25.00"),
+      date: "2026-09-21",
+    });
+
+    // 2. Rename Test Friend
+    await peopleUseCases.renameParticipant(testFriendId, "Pihu");
+
+    // 3. Load historical data
+    const allParticipants = await peopleUseCases.listAllParticipants();
+    const allSettlements = await peopleUseCases.listSettlements();
+
+    // 4. Find our settlement
+    const ourSettlement = allSettlements.find((s) => s.fromParticipantId === testFriendId && s.toParticipantId === gowriId && s.amountCents === parseMoney("25.00"));
+
+    // 5. Verify settlement still references the renamed participant by UUID
+    expect(ourSettlement?.fromParticipantId).toBe(testFriendId);
+
+    // 6. When rendering, we get the new name
+    const participant = allParticipants.find((p) => p.id === ourSettlement?.fromParticipantId);
+    expect(participant?.name).toBe("Pihu");
+  });
+
+  test("Balance calculations resolve renamed participant correctly", async () => {
+    const repos = createRepositories(db);
+    const renamedTestFriendId = participantId("regr_rename_balance_friend");
+    const renamedGowriId = participantId("regr_rename_balance_gowri");
+    const renamedNathanielId = participantId("regr_rename_balance_nathaniel");
+    const renameGroceriesId = categoryId("regr_rename_balance_groceries");
+
+    // Set up fresh participants (need two household members for balance calculation)
+    const participants2: Participant[] = [
+      { id: renamedGowriId, name: "Gowri4", kind: "household-member", memberKey: "gowri4" },
+      { id: renamedNathanielId, name: "Nathaniel4", kind: "household-member", memberKey: "nathaniel4" },
+      { id: renamedTestFriendId, name: "Test Friend 4", kind: "external" },
+    ];
+
+    for (const p of participants2) {
+      await repos.participants.save(p);
+    }
+
+    const cat2 = { id: renameGroceriesId, name: "Groceries4", archived: false, groupName: "Essentials" };
+    await repos.categories.save(cat2);
+
+    // 1. Create transaction with Test Friend as payer
+    await transactionUseCases.createTransaction({
+      date: "2026-09-20",
+      description: "Original name balance transaction",
+      payerParticipantId: renamedTestFriendId,
+      totalAmountInput: "60.00",
+      categoryId: renameGroceriesId,
+      scope: "shared",
+      splitMode: "CUSTOM_AMOUNT",
+      allocations: [
+        { participantId: renamedGowriId, amountInput: "30.00" },
+        { participantId: renamedNathanielId, amountInput: "30.00" },
+      ],
+    });
+
+    // 2. Rename Test Friend
+    await peopleUseCases.renameParticipant(renamedTestFriendId, "Pihu");
+
+    // 3. Load all data for balance calculation
+    const allParticipants = await peopleUseCases.listAllParticipants();
+    const allTransactions = await peopleUseCases.listAllTransactions();
+    const allSettlements = await peopleUseCases.listSettlements();
+
+    // 4. Calculate household balance (need both members)
+    const { external } = calculateHouseholdBalance(
+      [renamedGowriId, renamedNathanielId],
+      allTransactions,
+      allSettlements,
+      allParticipants
+    );
+
+    // 5. Verify balance calculation succeeded and shows external receivable
+    expect(external.length).toBeGreaterThan(0);
+
+    // 6. Verify that renamed participant can be resolved
+    const foundPayerName = external.some((r) => {
+      const payerName = allParticipants.find((p) => p.id === r.fromParticipantId)?.name;
+      return payerName === "Pihu";
+    });
+    expect(foundPayerName).toBe(true);
+  });
+});

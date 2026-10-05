@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { Plus, Archive, Trash2 } from "lucide-react";
+import { Plus, Archive, Edit2, Trash2 } from "lucide-react";
 import type { Participant } from "../../domain/shared/types.ts";
 import type { Settlement } from "../../domain/settlement/settlement.ts";
 import type { Transaction } from "../../domain/ledger/transaction.ts";
+import type { ParticipantId } from "../../domain/shared/types.ts";
 import { dollars } from "../format.ts";
 import { calculateHouseholdBalance } from "../../application/use-cases/balances/balanceUseCases.ts";
 
@@ -16,9 +17,9 @@ interface PeoplePageProps {
   onAddPerson: (name: string, note?: string) => Promise<void>;
   onArchivePerson: (participantId: string) => Promise<void>;
   onUnarchivePerson: (participantId: string) => Promise<void>;
+  onRenamePerson: (participantId: ParticipantId, newName: string) => Promise<void>;
   onRecordSettlement: (from: string, to: string, amountCents: number, date: string, note?: string) => Promise<void>;
   onDeleteSettlement: (settlementId: string) => Promise<void>;
-  onPermanentlyDeletePerson?: (participantId: string) => Promise<void>;
 }
 
 export function PeoplePage({
@@ -31,16 +32,16 @@ export function PeoplePage({
   onAddPerson,
   onArchivePerson,
   onUnarchivePerson,
+  onRenamePerson,
   onRecordSettlement,
   onDeleteSettlement,
-  onPermanentlyDeletePerson,
 }: PeoplePageProps) {
   const [showAddPersonForm, setShowAddPersonForm] = useState(false);
   const [showSettlementForm, setShowSettlementForm] = useState(false);
   const [showArchivedPeople, setShowArchivedPeople] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingSettlementId, setDeletingSettlementId] = useState<string | null>(null);
-  const [deletingPersonId, setDeletingPersonId] = useState<string | null>(null);
+  const [editingPersonId, setEditingPersonId] = useState<ParticipantId | null>(null);
 
   // Use allParticipants (including archived) for balance calculations
   // This ensures archived participants are resolvable for historical transactions
@@ -147,21 +148,19 @@ export function PeoplePage({
                     </div>
                     <div className="flex gap-2">
                       <button
+                        onClick={() => setEditingPersonId(person.id)}
+                        className="focus-ring rounded-md p-1 hover:bg-stone-100"
+                        title="Edit person name"
+                      >
+                        <Edit2 size={16} className="text-stone-500" />
+                      </button>
+                      <button
                         onClick={() => onArchivePerson(person.id)}
                         className="focus-ring rounded-md p-1 hover:bg-stone-100"
                         title="Archive person"
                       >
                         <Archive size={16} className="text-stone-500" />
                       </button>
-                      {onPermanentlyDeletePerson && (
-                        <button
-                          onClick={() => setDeletingPersonId(person.id)}
-                          className="focus-ring rounded-md p-1 hover:bg-red-50"
-                          title="Permanently delete person (requires no transaction/settlement history)"
-                        >
-                          <Trash2 size={16} className="text-stone-500 hover:text-red-600" />
-                        </button>
-                      )}
                     </div>
                   </div>
                 ))}
@@ -198,20 +197,18 @@ export function PeoplePage({
                     </div>
                     <div className="flex gap-2">
                       <button
+                        onClick={() => setEditingPersonId(person.id)}
+                        className="focus-ring rounded-md p-1 hover:bg-stone-100"
+                        title="Edit person name"
+                      >
+                        <Edit2 size={16} className="text-stone-500" />
+                      </button>
+                      <button
                         onClick={() => onUnarchivePerson(person.id)}
                         className="focus-ring rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
                       >
                         Restore
                       </button>
-                      {onPermanentlyDeletePerson && (
-                        <button
-                          onClick={() => setDeletingPersonId(person.id)}
-                          className="focus-ring rounded-md p-1 hover:bg-red-50"
-                          title="Permanently delete person (requires no transaction/settlement history)"
-                        >
-                          <Trash2 size={16} className="text-stone-500 hover:text-red-600" />
-                        </button>
-                      )}
                     </div>
                   </div>
                 ))}
@@ -304,7 +301,7 @@ export function PeoplePage({
         )}
       </div>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation Dialog for Settlement */}
       {deletingSettlementId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="rounded-lg border border-stone-200 bg-white p-6 shadow-lg">
@@ -337,41 +334,24 @@ export function PeoplePage({
         </div>
       )}
 
-      {/* Delete Person Confirmation Dialog */}
-      {deletingPersonId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="rounded-lg border border-stone-200 bg-white p-6 shadow-lg max-w-sm">
-            <h3 className="text-lg font-semibold">Permanently Delete Person?</h3>
-            <p className="mt-2 text-sm text-stone-600">
-              This person will be permanently removed from your household. They can only be deleted if they have no transaction or settlement history.
-            </p>
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={async () => {
-                  try {
-                    if (onPermanentlyDeletePerson) {
-                      await onPermanentlyDeletePerson(deletingPersonId);
-                    }
-                    setDeletingPersonId(null);
-                    setError(null);
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : "Failed to delete person");
-                    setDeletingPersonId(null);
-                  }
-                }}
-                className="focus-ring rounded-md border border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => setDeletingPersonId(null)}
-                className="focus-ring rounded-md border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-50"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Edit Person Dialog */}
+      {editingPersonId && (
+        <EditPersonDialog
+          person={externalPeople.find((p) => p.id === editingPersonId) || archivedExternalPeople.find((p) => p.id === editingPersonId)!}
+          onSubmit={async (newName) => {
+            try {
+              await onRenamePerson(editingPersonId, newName);
+              setEditingPersonId(null);
+              setError(null);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed to rename person");
+            }
+          }}
+          onCancel={() => {
+            setEditingPersonId(null);
+            setError(null);
+          }}
+        />
       )}
     </section>
   );
@@ -572,6 +552,79 @@ function SettlementForm({
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function EditPersonDialog({
+  person,
+  onSubmit,
+  onCancel,
+}: {
+  person: Participant;
+  onSubmit: (newName: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(person.name);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedName = name.trim();
+    
+    if (!trimmedName) {
+      return;
+    }
+
+    // If name hasn't changed, treat as no-op
+    if (trimmedName === person.name) {
+      onCancel();
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await onSubmit(trimmedName);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="rounded-lg border border-stone-200 bg-white p-6 shadow-lg max-w-sm">
+        <h3 className="text-lg font-semibold">Edit {person.name}</h3>
+        <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-stone-700">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="focus-ring mt-1 w-full rounded-md border border-stone-300 px-3 py-2"
+              disabled={loading}
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={!name.trim() || loading}
+              className="focus-ring rounded-md border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {loading ? "Saving..." : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="focus-ring rounded-md border border-stone-300 px-3 py-2 text-sm font-medium hover:bg-stone-50"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
