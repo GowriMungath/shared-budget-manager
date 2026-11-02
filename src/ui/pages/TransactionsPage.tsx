@@ -27,7 +27,8 @@ function allocationSummary(item: TransactionListItem, referenceData: Transaction
 export function TransactionsPage({ transactionUseCases }: TransactionsPageProps) {
   const [referenceData, setReferenceData] = useState<TransactionReferenceData | null>(null);
   const [transactions, setTransactions] = useState<TransactionListItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [reviewPendingIds, setReviewPendingIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | undefined>();
@@ -41,7 +42,7 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
   });
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setInitialLoading(true);
     setError(null);
 
     try {
@@ -57,7 +58,7 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
       console.error("Failed to load transactions", caught);
       setError("Transactions could not be loaded. Please try again.");
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
   }, [transactionUseCases]);
 
@@ -97,6 +98,7 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
     try {
       await transactionUseCases.deleteTransaction(deleteTarget.transaction.id);
       setDeleteTarget(null);
+      // Reload full list after delete since transaction no longer exists
       await load();
     } catch (caught) {
       console.error("Failed to delete transaction", caught);
@@ -105,18 +107,70 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
   }
 
   async function toggleReviewStatus(item: TransactionListItem) {
+    const txnId = item.transaction.id;
+    
+    // Prevent duplicate clicks on same row
+    if (reviewPendingIds.has(txnId)) {
+      return;
+    }
+
     try {
+      // Mark this transaction as pending
+      setReviewPendingIds((prev) => new Set(prev).add(txnId));
+
+      // Optimistic update: update the transaction in local state immediately
       const isReviewed = !!item.transaction.reviewedAt;
-      const reviewedAt = isReviewed ? undefined : new Date().toISOString();
-      await transactionUseCases.updateTransactionReviewStatus(item.transaction.id, reviewedAt);
-      await load();
+      const newReviewedAt = isReviewed ? undefined : new Date().toISOString();
+
+      setTransactions((prev) =>
+        prev.map((txItem) =>
+          txItem.transaction.id === txnId
+            ? {
+                ...txItem,
+                transaction: { ...txItem.transaction, reviewedAt: newReviewedAt },
+              }
+            : txItem
+        )
+      );
+
+      // Persist the change
+      await transactionUseCases.updateTransactionReviewStatus(txnId, newReviewedAt);
+
+      // Success: optimistic state remains in place
     } catch (caught) {
       console.error("Failed to toggle review status", caught);
       setError("Review status could not be updated. Please try again.");
+
+      // Rollback: revert the optimistic update by reloading
+      const currentTransaction = transactions.find((t) => t.transaction.id === txnId);
+      if (currentTransaction) {
+        // Fetch the current state from the repository to get the true reviewed status
+        try {
+          const updated = await transactionUseCases.getTransaction(txnId);
+          if (updated) {
+            setTransactions((prev) =>
+              prev.map((txItem) =>
+                txItem.transaction.id === txnId
+                  ? { ...txItem, transaction: updated }
+                  : txItem
+              )
+            );
+          }
+        } catch (reloadError) {
+          console.error("Failed to rollback review status", reloadError);
+        }
+      }
+    } finally {
+      // Mark this transaction as no longer pending
+      setReviewPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(txnId);
+        return next;
+      });
     }
   }
 
-  if (loading) {
+  if (initialLoading) {
     return <section className="rounded-md border border-stone-200 bg-white p-5">Loading transactions...</section>;
   }
 
@@ -228,9 +282,10 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
+                    disabled={reviewPendingIds.has(item.transaction.id)}
                     title={item.transaction.reviewedAt ? "Reviewed — click to mark unreviewed" : "Mark as reviewed"}
                     aria-label={item.transaction.reviewedAt ? "Reviewed — click to mark unreviewed" : "Mark as reviewed"}
-                    className="focus-ring inline-flex min-h-10 items-center justify-center rounded-md border border-stone-300 px-3 text-sm"
+                    className="focus-ring inline-flex min-h-10 items-center justify-center rounded-md border border-stone-300 px-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => toggleReviewStatus(item)}
                   >
                     {item.transaction.reviewedAt ? (
@@ -292,9 +347,10 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
                       <div className="flex gap-2">
                         <button
                           type="button"
+                          disabled={reviewPendingIds.has(item.transaction.id)}
                           title={item.transaction.reviewedAt ? "Reviewed — click to mark unreviewed" : "Mark as reviewed"}
                           aria-label={item.transaction.reviewedAt ? "Reviewed — click to mark unreviewed" : "Mark as reviewed"}
-                          className="focus-ring rounded-md border border-stone-300 p-2"
+                          className="focus-ring rounded-md border border-stone-300 p-2 disabled:opacity-50 disabled:cursor-not-allowed"
                           onClick={() => toggleReviewStatus(item)}
                         >
                           {item.transaction.reviewedAt ? (
