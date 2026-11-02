@@ -53,6 +53,7 @@ export const transactionRecordSchema = z.object({
   scope: z.enum(["shared", "personal"]),
   paymentMethodId: z.string().optional(),
   notes: z.string().optional(),
+  reviewedAt: z.string().optional(), // ISO 8601 timestamp; undefined means not reviewed
 });
 
 export const allocationRecordSchema = z.object({

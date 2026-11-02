@@ -247,13 +247,34 @@ export class TransactionUseCases {
   }
 
   async updateTransaction(id: Transaction["id"], draft: TransactionDraft): Promise<Transaction> {
+    const existingTransaction = await this.dependencies.transactions.getById(id);
     const transaction = await this.buildTransactionFromDraft(draft, id);
+    
+    // Preserve reviewedAt status from existing transaction
+    if (existingTransaction?.reviewedAt) {
+      transaction.reviewedAt = existingTransaction.reviewedAt;
+    }
+    
     await this.dependencies.transactions.update(transaction);
     return transaction;
   }
 
   async deleteTransaction(id: Transaction["id"]): Promise<void> {
     await this.dependencies.transactions.delete(id);
+  }
+
+  async updateTransactionReviewStatus(id: Transaction["id"], reviewedAt: string | undefined): Promise<void> {
+    const existing = await this.dependencies.transactions.getById(id);
+    if (!existing) {
+      throw new Error(`Transaction ${id} not found`);
+    }
+
+    const updated: Transaction = {
+      ...existing,
+      reviewedAt,
+    };
+
+    await this.dependencies.transactions.update(updated);
   }
 
   async getTransaction(id: Transaction["id"]): Promise<Transaction | undefined> {

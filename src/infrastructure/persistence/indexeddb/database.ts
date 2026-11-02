@@ -14,7 +14,7 @@ import type {
 } from "./schema.ts";
 
 export const DATABASE_NAME = "SharedBudgetManagerDB";
-export const DATABASE_VERSION = 4;
+export const DATABASE_VERSION = 5;
 
 export class SharedBudgetManagerDatabase extends Dexie {
   households!: Table<HouseholdRecord, string>;
@@ -84,6 +84,26 @@ export class SharedBudgetManagerDatabase extends Dexie {
       .upgrade(() => {
         // No data transformation needed - deletedAt is optional, defaults to undefined
         // All existing settlements remain active (deletedAt undefined)
+      });
+
+    // Version 5: Add reviewedAt to transactions for month-end reconciliation
+    this.version(5)
+      .stores({
+        households: "id",
+        participants: "id, kind, memberKey, archivedAt",
+        categories: "id, name, archived",
+        budgetPeriods: "id, startDate, endDate",
+        budgetLimits: "id, budgetPeriodId, categoryId, scope, ownerParticipantId",
+        transactions: "id, date, categoryId, payerParticipantId, scope, reviewedAt",
+        allocations: "id, transactionId, participantId, position",
+        settlements: "id, fromParticipantId, toParticipantId, date, deletedAt",
+        paymentMethods: "id, ownerParticipantId",
+        goals: "id, ownerParticipantId, deadlineMonth",
+        obligations: "id, dueDate, status, ownerParticipantId",
+      })
+      .upgrade(() => {
+        // No data transformation needed - reviewedAt is optional, defaults to undefined
+        // All existing transactions remain unreviewed (reviewedAt undefined)
       });
   }
 }

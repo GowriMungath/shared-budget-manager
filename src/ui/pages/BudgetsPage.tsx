@@ -23,6 +23,28 @@ function statusText(category: BudgetCategorySummary): string {
   return "On track";
 }
 
+/**
+ * Selects the default budget period based on today's date and available periods.
+ * Priority:
+ * 1. If a period contains today's date, choose that period
+ * 2. Otherwise choose the period with the latest date (most recent)
+ * 3. If no periods exist, return undefined
+ */
+function selectDefaultPeriod(periods: BudgetPeriod[]): string | undefined {
+  if (periods.length === 0) return undefined;
+
+  const today = new Date().toISOString().split("T")[0];
+  const periodContainingToday = periods.find((p) => p.startDate <= today && today <= p.endDate);
+
+  if (periodContainingToday) {
+    return periodContainingToday.id;
+  }
+
+  // Sort by endDate descending to find the most recent period
+  const sorted = [...periods].sort((a, b) => b.endDate.localeCompare(a.endDate));
+  return sorted[0]?.id;
+}
+
 export function BudgetsPage({ budgetUseCases }: BudgetsPageProps) {
   const [overview, setOverview] = useState<BudgetOverview | null>(null);
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>("");
@@ -39,6 +61,7 @@ export function BudgetsPage({ budgetUseCases }: BudgetsPageProps) {
   const [renamingCategoryId, setRenamingCategoryId] = useState<CategoryId | null>(null);
   const [renameInput, setRenameInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
 
   const load = useCallback(
     async (periodId?: string) => {
@@ -46,7 +69,12 @@ export function BudgetsPage({ budgetUseCases }: BudgetsPageProps) {
       try {
         const next = await budgetUseCases.getBudgetOverview(periodId as BudgetPeriod["id"] | undefined);
         setOverview(next);
-        setSelectedPeriodId(next.period.id);
+        // Only update selectedPeriodId if the selected period no longer exists
+        // This prevents overwriting user selections during data refreshes
+        setSelectedPeriodId((current) => {
+          const periodStillExists = next.periods.some((p) => p.id === current);
+          return periodStillExists ? current : next.period.id;
+        });
       } catch (caught) {
         console.error("Failed to load budget overview", caught);
         setError("Budget information could not be loaded.");
@@ -55,9 +83,42 @@ export function BudgetsPage({ budgetUseCases }: BudgetsPageProps) {
     [budgetUseCases],
   );
 
+  // Initialize: fetch all periods and select default
   useEffect(() => {
-    void load(selectedPeriodId || undefined);
-  }, [load, selectedPeriodId]);
+    if (initialized) return;
+
+    async function initializeOverview() {
+      setError(null);
+      try {
+        // Fetch overview without a specific period to get all periods
+        const next = await budgetUseCases.getBudgetOverview(undefined);
+        const defaultPeriodId = selectDefaultPeriod(next.periods);
+
+        if (defaultPeriodId && defaultPeriodId !== next.period.id) {
+          // Need to fetch again with the default period
+          const defaultOverview = await budgetUseCases.getBudgetOverview(defaultPeriodId as BudgetPeriod["id"]);
+          setOverview(defaultOverview);
+          setSelectedPeriodId(defaultPeriodId);
+        } else {
+          setOverview(next);
+          setSelectedPeriodId(next.period.id);
+        }
+        setInitialized(true);
+      } catch (caught) {
+        console.error("Failed to initialize budget overview", caught);
+        setError("Budget information could not be loaded.");
+        setInitialized(true);
+      }
+    }
+
+    void initializeOverview();
+  }, [initialized, budgetUseCases]);
+
+  // Data refresh: reload when user explicitly selects a period
+  useEffect(() => {
+    if (!initialized || selectedPeriodId === "") return;
+    void load(selectedPeriodId);
+  }, [initialized, selectedPeriodId, load]);
 
   const periodOptions = overview?.periods ?? [];
 

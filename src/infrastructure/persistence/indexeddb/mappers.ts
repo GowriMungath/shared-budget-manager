@@ -124,6 +124,7 @@ export const transactionToRecord = (transaction: Transaction): TransactionRecord
     scope: transaction.scope,
     paymentMethodId: transaction.paymentMethodId,
     notes: transaction.notes,
+    reviewedAt: transaction.reviewedAt,
   });
 };
 
@@ -166,6 +167,10 @@ export function transactionFromRecords(record: TransactionRecord, allocations: r
 
   if (parsedTransaction.notes) {
     transaction.notes = parsedTransaction.notes;
+  }
+
+  if (parsedTransaction.reviewedAt) {
+    transaction.reviewedAt = parsedTransaction.reviewedAt;
   }
 
   validateTransaction(transaction);

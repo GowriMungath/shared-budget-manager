@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Edit3, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, Edit3, Plus, Trash2 } from "lucide-react";
 import type { Transaction } from "../../domain/ledger/transaction.ts";
 import type { ParticipantId } from "../../domain/shared/types.ts";
 import type { TransactionUseCases } from "../../application/use-cases/transactions/transactionUseCases.ts";
@@ -101,6 +101,18 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
     } catch (caught) {
       console.error("Failed to delete transaction", caught);
       setError("Transaction could not be deleted. Please try again.");
+    }
+  }
+
+  async function toggleReviewStatus(item: TransactionListItem) {
+    try {
+      const isReviewed = !!item.transaction.reviewedAt;
+      const reviewedAt = isReviewed ? undefined : new Date().toISOString();
+      await transactionUseCases.updateTransactionReviewStatus(item.transaction.id, reviewedAt);
+      await load();
+    } catch (caught) {
+      console.error("Failed to toggle review status", caught);
+      setError("Review status could not be updated. Please try again.");
     }
   }
 
@@ -216,6 +228,19 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
+                    title={item.transaction.reviewedAt ? "Reviewed — click to mark unreviewed" : "Mark as reviewed"}
+                    aria-label={item.transaction.reviewedAt ? "Reviewed — click to mark unreviewed" : "Mark as reviewed"}
+                    className="focus-ring inline-flex min-h-10 items-center justify-center rounded-md border border-stone-300 px-3 text-sm"
+                    onClick={() => toggleReviewStatus(item)}
+                  >
+                    {item.transaction.reviewedAt ? (
+                      <CheckCircle2 size={16} className="text-emerald-700" />
+                    ) : (
+                      <Circle size={16} className="text-stone-400" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
                     aria-label={`Edit ${item.transaction.description}`}
                     className="focus-ring inline-flex min-h-10 items-center justify-center rounded-md border border-stone-300 px-3 text-sm"
                     onClick={() => {
@@ -265,6 +290,19 @@ export function TransactionsPage({ transactionUseCases }: TransactionsPageProps)
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
+                        <button
+                          type="button"
+                          title={item.transaction.reviewedAt ? "Reviewed — click to mark unreviewed" : "Mark as reviewed"}
+                          aria-label={item.transaction.reviewedAt ? "Reviewed — click to mark unreviewed" : "Mark as reviewed"}
+                          className="focus-ring rounded-md border border-stone-300 p-2"
+                          onClick={() => toggleReviewStatus(item)}
+                        >
+                          {item.transaction.reviewedAt ? (
+                            <CheckCircle2 size={16} className="text-emerald-700" />
+                          ) : (
+                            <Circle size={16} className="text-stone-400" />
+                          )}
+                        </button>
                         <button
                           type="button"
                           aria-label={`Edit ${item.transaction.description}`}

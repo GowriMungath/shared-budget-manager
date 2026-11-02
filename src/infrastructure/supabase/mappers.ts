@@ -149,6 +149,7 @@ export function transactionFromRows(
     categoryId: Ids.categoryId(txRow.category_id),
     payerParticipantId: Ids.participantId(txRow.payer_participant_id),
     scope: txRow.scope as "shared" | "personal",
+    reviewedAt: txRow.reviewed_at ?? undefined,
     allocations: allocations.map((a) => ({
       participantId: Ids.participantId(a.participant_id),
       amountCents: a.cents as Cents,
@@ -170,6 +171,7 @@ export function transactionToRow(
     category_id: transaction.categoryId,
     payer_participant_id: transaction.payerParticipantId,
     scope: transaction.scope,
+    reviewed_at: transaction.reviewedAt ?? null,
   };
 }
 

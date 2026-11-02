@@ -27,6 +27,7 @@ export interface Transaction {
   scope: BudgetScope;
   paymentMethodId?: PaymentMethodId;
   notes?: string;
+  reviewedAt?: string; // ISO 8601 timestamp; undefined means not reviewed
   allocations: Allocation[];
 }
 
