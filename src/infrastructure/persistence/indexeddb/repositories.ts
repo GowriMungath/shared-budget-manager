@@ -88,6 +88,12 @@ export class DexieParticipantRepository implements ParticipantRepository {
 
   async save(participant: Participant): Promise<void> {
     await this.db.participants.put(participantToRecord(participant));
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../../cache/sessionCache.ts");
+    sessionCache.invalidateParticipants();
+    sessionCache.invalidateDashboard();
+    sessionCache.invalidateTransactions();
   }
 
   async delete(id: ParticipantId): Promise<void> {
@@ -130,10 +136,20 @@ export class DexieBudgetLimitRepository implements BudgetLimitRepository {
 
   async save(limit: BudgetLimit): Promise<void> {
     await this.db.budgetLimits.put(budgetLimitToRecord(limit));
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../../cache/sessionCache.ts");
+    sessionCache.invalidateBudget();
+    sessionCache.invalidateDashboard();
   }
 
   async delete(id: BudgetLimit["id"]): Promise<void> {
     await this.db.budgetLimits.delete(id);
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../../cache/sessionCache.ts");
+    sessionCache.invalidateBudget();
+    sessionCache.invalidateDashboard();
   }
 }
 
@@ -149,6 +165,13 @@ export class DexieTransactionRepository implements TransactionRepository {
         transaction.allocations.map((allocation, index) => allocationToRecord(transaction, allocation, index)),
       );
     });
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../../cache/sessionCache.ts");
+    sessionCache.invalidateTransactions();
+    sessionCache.invalidateDashboard();
+    sessionCache.invalidateBudget();
+    sessionCache.invalidateParticipants();
   }
 
   async update(transaction: Transaction): Promise<void> {
@@ -161,6 +184,13 @@ export class DexieTransactionRepository implements TransactionRepository {
         transaction.allocations.map((allocation, index) => allocationToRecord(transaction, allocation, index)),
       );
     });
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../../cache/sessionCache.ts");
+    sessionCache.invalidateTransactions();
+    sessionCache.invalidateDashboard();
+    sessionCache.invalidateBudget();
+    sessionCache.invalidateParticipants();
   }
 
   async delete(id: Transaction["id"]): Promise<void> {
@@ -168,6 +198,13 @@ export class DexieTransactionRepository implements TransactionRepository {
       await this.db.transactions.delete(id);
       await this.db.allocations.where("transactionId").equals(id).delete();
     });
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../../cache/sessionCache.ts");
+    sessionCache.invalidateTransactions();
+    sessionCache.invalidateDashboard();
+    sessionCache.invalidateBudget();
+    sessionCache.invalidateParticipants();
   }
 
   async getById(id: Transaction["id"]): Promise<Transaction | undefined> {
@@ -243,6 +280,11 @@ export class DexieSettlementRepository implements SettlementRepository {
 
   async save(settlement: Settlement): Promise<void> {
     await this.db.settlements.put(settlementToRecord(settlement));
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../../cache/sessionCache.ts");
+    sessionCache.invalidateParticipants();
+    sessionCache.invalidateDashboard();
   }
 
   async delete(id: Settlement["id"]): Promise<void> {
@@ -254,6 +296,11 @@ export class DexieSettlementRepository implements SettlementRepository {
         deletedAt: new Date().toISOString(),
       });
     }
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../../cache/sessionCache.ts");
+    sessionCache.invalidateParticipants();
+    sessionCache.invalidateDashboard();
   }
 }
 

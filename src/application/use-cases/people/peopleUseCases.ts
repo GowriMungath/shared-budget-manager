@@ -206,12 +206,11 @@ export class PeopleUseCases {
    * Uses canonical balance engine for consistency with dashboard
    */
   async getHouseholdBalance(householdMemberIds: ParticipantId[]): Promise<HouseholdBalance> {
-    const [allTransactions, allSettlements] = await Promise.all([
+    const [allTransactions, allSettlements, allParticipants] = await Promise.all([
       this.dependencies.transactions.listAll(),
       this.dependencies.settlements.listAll(),
+      this.dependencies.participants.listAll(),
     ]);
-
-    const allParticipants = await this.dependencies.participants.listAll();
 
     const internalBalance = calculateNetInternalBalance(
       allTransactions,

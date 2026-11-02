@@ -2,7 +2,8 @@ import { calculateBudgetUsage } from "../../../domain/budget/budget.ts";
 import { assertCalendarDate, periodElapsedPercent } from "../../../domain/budget/calendar.ts";
 import { cents, parseMoney } from "../../../domain/money/money.ts";
 import { budgetLimitId, budgetPeriodId, categoryId } from "../../../domain/shared/ids.ts";
-import type { BudgetLimit, BudgetPeriod, Category, Cents } from "../../../domain/shared/types.ts";
+import type { BudgetLimit, BudgetPeriod, Category, Cents, Participant } from "../../../domain/shared/types.ts";
+import type { Transaction } from "../../../domain/ledger/transaction.ts";
 import type {
   BudgetLimitRepository,
   BudgetPeriodRepository,
@@ -11,6 +12,7 @@ import type {
   TransactionRepository,
 } from "../../ports/repositories.ts";
 import type { IdService } from "../../services/idService.ts";
+import { sessionCache } from "../../../infrastructure/cache/sessionCache.ts";
 import {
   BudgetApplicationError,
   type BudgetCategorySummary,
@@ -153,12 +155,38 @@ export class BudgetUseCases {
     return updated;
   }
 
-  async getBudgetOverview(periodIdValue?: BudgetPeriod["id"]): Promise<BudgetOverview> {
+  /**
+   * Get budget overview for a period.
+   * Accepts optional pre-loaded data to eliminate duplicate fetches.
+   * If not provided, fetches from repository.
+   */
+  async getBudgetOverview(
+    periodIdValue?: BudgetPeriod["id"],
+    preloadedData?: {
+      transactions?: Transaction[];
+      categories?: Category[];
+      participants?: Participant[];
+    }
+  ): Promise<BudgetOverview> {
+    // Check cache first if we have a period ID
+    if (periodIdValue) {
+      const cached = sessionCache.getBudget(periodIdValue);
+      if (cached) {
+        return cached;
+      }
+    }
+
     const [periods, categories, participants, transactions] = await Promise.all([
       this.getBudgetPeriods(),
-      this.dependencies.categories.listAll(),
-      this.dependencies.participants.listAll(),
-      this.dependencies.transactions.listAll(),
+      preloadedData?.categories 
+        ? Promise.resolve(preloadedData.categories)
+        : this.dependencies.categories.listAll(),
+      preloadedData?.participants
+        ? Promise.resolve(preloadedData.participants)
+        : this.dependencies.participants.listAll(),
+      preloadedData?.transactions
+        ? Promise.resolve(preloadedData.transactions)
+        : this.dependencies.transactions.listAll(),
     ]);
     const period = periods.find((item) => item.id === periodIdValue) ?? periods[0];
     if (!period) {
@@ -256,11 +284,18 @@ export class BudgetUseCases {
       categories: categorySummaries,
     };
     
-    return {
+    const overview: BudgetOverview = {
       period,
       periods,
       householdMembers,
       sections: [householdSection],
     };
+
+    // Cache the result for future access to same period
+    if (period.id) {
+      sessionCache.setBudget(period.id, overview);
+    }
+
+    return overview;
   }
 }

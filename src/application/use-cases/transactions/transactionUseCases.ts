@@ -285,16 +285,20 @@ export class TransactionUseCases {
     const [transactions, referenceData, allParticipants] = await Promise.all([
       this.dependencies.transactions.listAll(),
       this.getReferenceData(),
-      this.dependencies.participants.listAll(), // Include archived for historical rendering
+      this.dependencies.participants.listAll(),
     ]);
+
+    // Create maps for O(1) lookups instead of O(n) array searches
+    const categoryById = new Map(referenceData.categories.map(c => [c.id, c]));
+    const participantById = new Map(allParticipants.map(p => [p.id, p]));
 
     return transactions
       .slice()
       .sort((left, right) => right.date.localeCompare(left.date))
       .map((transaction) => ({
         transaction,
-        category: referenceData.categories.find((category) => category.id === transaction.categoryId),
-        payer: allParticipants.find((participant) => participant.id === transaction.payerParticipantId),
+        category: categoryById.get(transaction.categoryId),
+        payer: participantById.get(transaction.payerParticipantId),
       }));
   }
 }

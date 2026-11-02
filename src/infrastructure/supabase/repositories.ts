@@ -47,6 +47,7 @@ import {
   settlementToRow,
   transactionFromRows,
   transactionToRow,
+  type AllocationRow,
 } from "./mappers.ts";
 
 /**
@@ -125,6 +126,12 @@ export class SupabaseParticipantRepository implements ParticipantRepository {
     const row = participantToRow(participant, this.householdId);
     const { error } = await supabase.from("participants").upsert(row);
     if (error) throw new Error(`Failed to save participant: ${error.message}`);
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../cache/sessionCache.ts");
+    sessionCache.invalidateParticipants();
+    sessionCache.invalidateDashboard();
+    sessionCache.invalidateTransactions();
   }
 
   async delete(id: ParticipantId): Promise<void> {
@@ -204,16 +211,61 @@ export class SupabaseBudgetLimitRepository implements BudgetLimitRepository {
     const row = budgetLimitToRow(limit, this.householdId);
     const { error } = await supabase.from("budget_limits").upsert(row);
     if (error) throw new Error(`Failed to save budget limit: ${error.message}`);
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../cache/sessionCache.ts");
+    sessionCache.invalidateBudget();
+    sessionCache.invalidateDashboard();
   }
 
   async delete(id: string): Promise<void> {
     const { error } = await supabase.from("budget_limits").update({ deleted_at: new Date().toISOString() }).eq("id", id);
     if (error) throw new Error(`Failed to delete budget limit: ${error.message}`);
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../cache/sessionCache.ts");
+    sessionCache.invalidateBudget();
+    sessionCache.invalidateDashboard();
   }
 }
 
 export class SupabaseTransactionRepository implements TransactionRepository {
   constructor(private householdId: HouseholdId) {}
+
+  /**
+   * Bulk-load allocations for multiple transactions in a single query.
+   * Eliminates N+1 pattern by fetching all allocations at once.
+   */
+  private async loadAllocationsForTransactions(
+    transactionIds: string[],
+  ): Promise<Map<string, AllocationRow[]>> {
+    if (transactionIds.length === 0) {
+      return new Map();
+    }
+
+    const { data: allocations, error } = await supabase
+      .from("allocations")
+      .select("*")
+      .eq("household_id", this.householdId)
+      .in("transaction_id", transactionIds)
+      .is("deleted_at", null);
+
+    if (error) {
+      throw new Error(`Failed to load allocations: ${error.message}`);
+    }
+
+    // Group allocations by transaction ID for O(1) lookup
+    const allocationsByTxId = new Map<string, AllocationRow[]>();
+    for (const allocation of allocations || []) {
+      const txId = allocation.transaction_id;
+      if (!allocationsByTxId.has(txId)) {
+        allocationsByTxId.set(txId, []);
+      }
+      allocationsByTxId.get(txId)!.push(allocation);
+    }
+
+    return allocationsByTxId;
+  }
 
   async create(transaction: Transaction): Promise<void> {
     const txRow = transactionToRow(transaction, this.householdId);
@@ -229,6 +281,13 @@ export class SupabaseTransactionRepository implements TransactionRepository {
       const { error: allocError } = await supabase.from("allocations").insert(allocationRow);
       if (allocError) throw new Error(`Failed to create allocation: ${allocError.message}`);
     }
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../cache/sessionCache.ts");
+    sessionCache.invalidateTransactions();
+    sessionCache.invalidateDashboard();
+    sessionCache.invalidateBudget();
+    sessionCache.invalidateParticipants();
   }
 
   async update(transaction: Transaction): Promise<void> {
@@ -247,11 +306,25 @@ export class SupabaseTransactionRepository implements TransactionRepository {
       const { error: allocError } = await supabase.from("allocations").insert(allocationRow);
       if (allocError) throw new Error(`Failed to update allocation: ${allocError.message}`);
     }
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../cache/sessionCache.ts");
+    sessionCache.invalidateTransactions();
+    sessionCache.invalidateDashboard();
+    sessionCache.invalidateBudget();
+    sessionCache.invalidateParticipants();
   }
 
   async delete(id: string): Promise<void> {
     const { error } = await supabase.from("transactions").update({ deleted_at: new Date().toISOString() }).eq("id", id);
     if (error) throw new Error(`Failed to delete transaction: ${error.message}`);
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../cache/sessionCache.ts");
+    sessionCache.invalidateTransactions();
+    sessionCache.invalidateDashboard();
+    sessionCache.invalidateBudget();
+    sessionCache.invalidateParticipants();
   }
 
   async getById(id: string): Promise<Transaction | undefined> {
@@ -264,15 +337,11 @@ export class SupabaseTransactionRepository implements TransactionRepository {
 
     if (txError || !txData) return undefined;
 
-    const { data: allocations, error: allocError } = await supabase
-      .from("allocations")
-      .select("*")
-      .eq("transaction_id", id)
-      .is("deleted_at", null);
+    // Load allocations for this single transaction
+    const allocationsByTxId = await this.loadAllocationsForTransactions([id]);
+    const allocations = allocationsByTxId.get(id) || [];
 
-    if (allocError) throw new Error(`Failed to load allocations: ${allocError.message}`);
-
-    return transactionFromRows(txData, allocations || []);
+    return transactionFromRows(txData, allocations);
   }
 
   async listByPeriod(startDate: string, endDate: string): Promise<Transaction[]> {
@@ -286,19 +355,18 @@ export class SupabaseTransactionRepository implements TransactionRepository {
 
     if (txError) throw new Error(`Failed to list transactions: ${txError.message}`);
 
-    const transactions: Transaction[] = [];
-    for (const tx of txData || []) {
-      const { data: allocations, error: allocError } = await supabase
-        .from("allocations")
-        .select("*")
-        .eq("transaction_id", tx.id)
-        .is("deleted_at", null);
-
-      if (allocError) throw new Error(`Failed to load allocations: ${allocError.message}`);
-      transactions.push(transactionFromRows(tx, allocations || []));
+    if (!txData || txData.length === 0) {
+      return [];
     }
 
-    return transactions;
+    // Bulk-load all allocations for these transactions (replaces N individual queries)
+    const transactionIds = txData.map((tx) => tx.id);
+    const allocationsByTxId = await this.loadAllocationsForTransactions(transactionIds);
+
+    // Attach allocations to transactions (O(1) lookup, no additional queries)
+    return txData.map((tx) =>
+      transactionFromRows(tx, allocationsByTxId.get(tx.id) || []),
+    );
   }
 
   async listAll(): Promise<Transaction[]> {
@@ -310,19 +378,18 @@ export class SupabaseTransactionRepository implements TransactionRepository {
 
     if (txError) throw new Error(`Failed to list transactions: ${txError.message}`);
 
-    const transactions: Transaction[] = [];
-    for (const tx of txData || []) {
-      const { data: allocations, error: allocError } = await supabase
-        .from("allocations")
-        .select("*")
-        .eq("transaction_id", tx.id)
-        .is("deleted_at", null);
-
-      if (allocError) throw new Error(`Failed to load allocations: ${allocError.message}`);
-      transactions.push(transactionFromRows(tx, allocations || []));
+    if (!txData || txData.length === 0) {
+      return [];
     }
 
-    return transactions;
+    // Bulk-load all allocations for these transactions (replaces N individual queries)
+    const transactionIds = txData.map((tx) => tx.id);
+    const allocationsByTxId = await this.loadAllocationsForTransactions(transactionIds);
+
+    // Attach allocations to transactions (O(1) lookup, no additional queries)
+    return txData.map((tx) =>
+      transactionFromRows(tx, allocationsByTxId.get(tx.id) || []),
+    );
   }
 
   async hasParticipantReference(participantId: ParticipantId): Promise<boolean> {
@@ -436,6 +503,11 @@ export class SupabaseSettlementRepository implements SettlementRepository {
     const row = settlementToRow(settlement, this.householdId);
     const { error } = await supabase.from("settlements").upsert(row);
     if (error) throw new Error(`Failed to save settlement: ${error.message}`);
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../cache/sessionCache.ts");
+    sessionCache.invalidateParticipants();
+    sessionCache.invalidateDashboard();
   }
 
   async getById(id: Settlement["id"]): Promise<Settlement | undefined> {
@@ -462,6 +534,11 @@ export class SupabaseSettlementRepository implements SettlementRepository {
       .eq("household_id", this.householdId);
 
     if (error) throw new Error(`Failed to delete settlement: ${error.message}`);
+
+    // Invalidate caches after mutation
+    const { sessionCache } = await import("../cache/sessionCache.ts");
+    sessionCache.invalidateParticipants();
+    sessionCache.invalidateDashboard();
   }
 }
 

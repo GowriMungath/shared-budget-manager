@@ -12,6 +12,7 @@ import type {
   SettlementRepository,
   TransactionRepository,
 } from "../../ports/repositories.ts";
+import { sessionCache } from "../../../infrastructure/cache/sessionCache.ts";
 import { BudgetUseCases } from "../budgets/budgetUseCases.ts";
 import type { BudgetSectionSummary, PaceStatus } from "../budgets/types.ts";
 import type {
@@ -35,21 +36,6 @@ export interface DashboardUseCaseDependencies {
 
 function isWithinPeriod(transaction: Transaction, period: BudgetPeriod): boolean {
   return transaction.date >= period.startDate && transaction.date <= period.endDate;
-}
-
-function selectRelevantPeriod(periods: readonly BudgetPeriod[], today: string): BudgetPeriod | undefined {
-  const sorted = periods.slice().sort((left, right) => left.startDate.localeCompare(right.startDate));
-  const current = sorted.find((period) => period.startDate <= today && today <= period.endDate);
-
-  if (current) {
-    return current;
-  }
-
-  const previous = sorted
-    .filter((period) => period.startDate <= today)
-    .sort((left, right) => right.endDate.localeCompare(left.endDate))[0];
-
-  return previous ?? sorted.at(-1);
 }
 
 function memberName(participantsById: ReadonlyMap<ParticipantId, Participant>, participantId: ParticipantId): string {
@@ -198,19 +184,30 @@ export class DashboardUseCases {
 
   async getDashboardOverview(selectedBudgetPeriodId?: BudgetPeriod["id"]): Promise<DashboardOverview> {
     const today = this.dependencies.today?.() ?? new Date().toISOString().slice(0, 10);
-    const periods = (await this.dependencies.budgets.getBudgetPeriods()).sort((left, right) =>
-      left.startDate.localeCompare(right.startDate),
-    );
-    const selectedPeriod =
-      periods.find((period) => period.id === selectedBudgetPeriodId) ?? selectRelevantPeriod(periods, today);
-
+    
+    // Fetch budget periods first to determine selected period
+    const allPeriods = await this.dependencies.budgets.getBudgetPeriods();
+    
+    // Select the appropriate period
+    const periodContainingToday = allPeriods.find((p) => p.startDate <= today && today <= p.endDate);
+    const selectedPeriod = 
+      (selectedBudgetPeriodId ? allPeriods.find((p) => p.id === selectedBudgetPeriodId) : null) ||
+      periodContainingToday ||
+      allPeriods[0];
+    
     if (!selectedPeriod) {
       throw new Error("No budget period exists");
     }
-
-    const [budgetOverview, allTransactions, participants, categories, settlements, goals, obligations] =
+    
+    // Check cache first — if hit, return cached result without fetching other data
+    const cached = sessionCache.getDashboard(selectedPeriod.id);
+    if (cached) {
+      return cached;
+    }
+    
+    // Fetch all shared data once at this level
+    const [allTransactions, participants, categories, settlements, goals, obligations] =
       await Promise.all([
-        this.dependencies.budgets.getBudgetOverview(selectedPeriod.id),
         this.dependencies.transactions.listAll(),
         this.dependencies.participants.listAll(),
         this.dependencies.categories.listAll(),
@@ -218,6 +215,14 @@ export class DashboardUseCases {
         this.dependencies.goals.listAll(),
         this.dependencies.obligations.listAll(),
       ]);
+    
+    // Get budget overview, passing pre-loaded data to avoid duplicate fetches
+    const selectedBudgetOverview = await this.dependencies.budgets.getBudgetOverview(selectedPeriod.id, {
+      transactions: allTransactions,
+      participants,
+      categories,
+    });
+    
     const periodTransactions = allTransactions.filter((transaction) => isWithinPeriod(transaction, selectedPeriod));
     const participantsById = new Map(participants.map((participant) => [participant.id, participant]));
     const categoriesById = new Map(categories.map((category) => [category.id, category]));
@@ -248,23 +253,23 @@ export class DashboardUseCases {
     }
     const sharedSpending = cents(sharedSpendingAmount);
     const personalSpending = cents(personalSpendingAmount);
-    const totalBudgeted = sumSectionBudgeted(budgetOverview.sections);
-    const budgetedSpent = budgetedCategorySpent(budgetOverview.sections);
+    const totalBudgeted = sumSectionBudgeted(selectedBudgetOverview.sections);
+    const budgetedSpent = budgetedCategorySpent(selectedBudgetOverview.sections);
     const remainingBudget = cents(totalBudgeted - budgetedSpent);
     const elapsedPercent = periodElapsedPercent(selectedPeriod, today);
     const internalBalance = calculateNetInternalBalance(allTransactions, settlements, householdMemberIds);
     const externalReceivables = calculateExternalReceivables(allTransactions, settlements, participants);
 
-    return {
+    const overview: DashboardOverview = {
       period: selectedPeriod,
-      periods,
+      periods: allPeriods,
       selectedBudgetPeriodId: selectedPeriod.id,
       householdSummary: {
         totalSpentCents: spendingSummary.householdSpendingCents,
         totalBudgetedCents: totalBudgeted,
         budgetedCategorySpentCents: budgetedSpent,
         remainingBudgetCents: remainingBudget,
-        unbudgetedSpentCents: unbudgetedSpent(budgetOverview.sections),
+        unbudgetedSpentCents: unbudgetedSpent(selectedBudgetOverview.sections),
         sharedSpendingCents: sharedSpending,
         personalSpendingCents: personalSpending,
       },
@@ -276,9 +281,9 @@ export class DashboardUseCases {
         usagePercent: totalBudgeted > 0 ? budgetedSpent / totalBudgeted : undefined,
         periodElapsedPercent: elapsedPercent,
         aggregatePaceStatus: aggregatePaceStatus(totalBudgeted, budgetedSpent, elapsedPercent),
-        overview: budgetOverview,
+        overview: selectedBudgetOverview,
       },
-      attentionCategories: attentionCategories(budgetOverview.sections),
+      attentionCategories: attentionCategories(selectedBudgetOverview.sections),
       internalBalance: {
         ...internalBalance,
         fromName: internalBalance.fromParticipantId
@@ -330,5 +335,9 @@ export class DashboardUseCases {
                 : "Unknown participant",
         })),
     };
+
+    // Cache the result for future access to same period
+    sessionCache.setDashboard(selectedPeriod.id, overview);
+    return overview;
   }
 }

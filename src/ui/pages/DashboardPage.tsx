@@ -52,7 +52,11 @@ export function DashboardPage({ dashboardUseCases }: DashboardPageProps) {
       try {
         const next = await dashboardUseCases.getDashboardOverview(periodId as BudgetPeriod["id"] | undefined);
         setOverview(next);
-        setSelectedPeriodId(next.selectedBudgetPeriodId);
+        // Preserve user's manual period selection. Only update if the selected period no longer exists.
+        setSelectedPeriodId((current) => {
+          const periodStillExists = next.periods.some((p) => p.id === current);
+          return periodStillExists ? current : next.selectedBudgetPeriodId;
+        });
       } catch (caught) {
         console.error("Failed to load dashboard", caught);
         setError("Dashboard information could not be loaded.");
