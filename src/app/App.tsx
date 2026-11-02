@@ -69,7 +69,7 @@ function AppShell() {
     return () => {
       mounted = false;
     };
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     const updateConnectivity = () => setOffline(!navigator.onLine);
